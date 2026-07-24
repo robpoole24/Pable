@@ -278,10 +278,11 @@ async function loadAllGoodies(ev) {
   const entities  = ev.entities || { people: [] };
 
   const keyword     = pageTitle || title.split(' ').slice(0,5).join(' ');
+  // Use server-side query expansion if available — much richer than single keyword
+  const queryExpansion = ev.queryExpansion || [keyword, ...curatedPeopleNames].filter(Boolean);
   const isSpace     = /nasa|apollo|space|astronaut|rocket|moon|mars|orbit|satellite|shuttle|gemini|iss|hubble/i.test(title+fullText);
   const isRoman     = /roman|caesar|augustus|empire|legion|senate|consul|gladiator|colosseum|carthage/i.test(title+fullText);
   const isMedieval  = year >= 500 && year < 1500;
-  const hasNewspaper = year >= 1770 && year <= 1963;
   const hasRecording = year >= 1877;
   const hasNewsVideo = year >= 1950;
   const currencyMention = extractCurrencyMention(fullText);
@@ -316,6 +317,9 @@ async function loadAllGoodies(ev) {
 
   // Merge curated people names into query list — these are the most precise
   const queryPeople = curatedPeopleNames.length ? curatedPeopleNames : titlePeople;
+  // isModern flag — news APIs only useful for recent events
+  const isModern = year >= 1950;
+  const hasNewspaper = year >= 1770 && year <= 1963;
 
   // Fire all in parallel — each appends itself when ready
   const loaders = [
@@ -357,6 +361,14 @@ async function loadAllGoodies(ev) {
     coords ? loadMap(grid, coords, keyword, year, ev.infoboxMapUrl) : null,
     // 17. NASA imagery (space events)
     isSpace ? loadNASA(grid, keyword, year) : null,
+    // 18. GDELT broadcast news clips (post-2009 events)
+    year >= 2009 ? loadGDELT(grid, queryExpansion) : null,
+    // 19. Guardian news coverage
+    year >= 1999 ? loadGuardian(grid, queryExpansion) : null,
+    // 20. NewsData.io historical news + video
+    year >= 1950 ? loadNewsData(grid, queryExpansion) : null,
+    // 21. Internet Archive texts & Magazine Rack
+    loadArchiveTexts(grid, queryExpansion, year),
   ].filter(Boolean);
 
   await Promise.allSettled(loaders);
@@ -1404,4 +1416,144 @@ function switchAboutTab(tab) {
   document.getElementById('about-app').style.display   = tab==='app'   ? 'block' : 'none';
   document.getElementById('tab-pable').classList.toggle('active', tab==='pable');
   document.getElementById('tab-app').classList.toggle('active',   tab==='app');
+}
+
+// ─── GOODIE 18: GDELT BROADCAST NEWS ─────────────────────────────────
+// TV news clips from CNN, NBC, BBC, PBS etc — post-2009 events only
+async function loadGDELT(grid, queries) {
+  try {
+    // Try each query variant until we get results
+    for (const q of queries.slice(0, 3)) {
+      const data = await fetch(`/api/gdelt/tv?q=${encodeURIComponent(q)}&maxrecords=5`).then(r=>r.json());
+      const clips = data.clips || data.items || [];
+      if (!clips.length) continue;
+
+      const html = clips.slice(0, 5).map(c => `
+        <a href="${c.url || c.previewUrl || '#'}" target="_blank" class="video-item">
+          ${c.preview_url || c.thumbnail
+            ? `<img class="video-thumb-img" src="${toHttps(c.preview_url || c.thumbnail)}" alt="" onerror="this.style.display='none'"/>`
+            : '<div class="video-thumb-placeholder">📺</div>'}
+          <div>
+            <div class="video-title">${(c.show || c.title || 'News Clip').substring(0,80)}</div>
+            <div class="video-channel">${c.station || c.network || 'Broadcast News'}</div>
+            <div class="video-source">GDELT · Internet Archive TV Archive</div>
+          </div>
+        </a>`).join('');
+      appendGoodie(grid, '📡', 'Broadcast News Coverage', html, 'GDELT Project · TV News Archive (2009–2024)');
+      return;
+    }
+  } catch {}
+}
+
+// ─── GOODIE 19: THE GUARDIAN ─────────────────────────────────────────
+async function loadGuardian(grid, queries) {
+  try {
+    for (const q of queries.slice(0, 3)) {
+      // Try video content first, then general articles
+      for (const tag of ['type/video', '']) {
+        const params = new URLSearchParams({ q, pageSize: 5, ...(tag ? { tag } : {}) });
+        const data = await fetch(`/api/guardian?${params}`).then(r=>r.json());
+        const results = data.response?.results || [];
+        if (!results.length) continue;
+
+        const html = results.map(r => `
+          <div class="newspaper-item">
+            ${r.fields?.thumbnail
+              ? `<a href="${r.webUrl}" target="_blank">
+                  <img src="${toHttps(r.fields.thumbnail)}" class="newspaper-thumb" style="height:80px;object-fit:cover" onerror="this.style.display='none'" loading="lazy"/>
+                </a>`
+              : ''}
+            <div class="newspaper-title"><a href="${r.webUrl}" target="_blank">${r.fields?.headline || r.webTitle}</a></div>
+            <div class="newspaper-meta">${r.webPublicationDate?.substring(0,10) || ''} · The Guardian</div>
+            ${r.fields?.trailText ? `<div class="newspaper-snippet">${r.fields.trailText.replace(/<[^>]+>/g,'').substring(0,120)}…</div>` : ''}
+          </div>`).join('');
+        appendGoodie(grid, '📰', 'The Guardian', html, 'The Guardian Open Platform');
+        return;
+      }
+    }
+  } catch {}
+}
+
+// ─── GOODIE 20: NEWSDATA.IO ───────────────────────────────────────────
+async function loadNewsData(grid, queries) {
+  try {
+    for (const q of queries.slice(0, 2)) {
+      const data = await fetch(`/api/newsdata?q=${encodeURIComponent(q)}`).then(r=>r.json());
+      const articles = (data.results || []).filter(a => a.title && a.link);
+      if (!articles.length) continue;
+
+      // Separate video articles from text
+      const videoArticles = articles.filter(a => a.video_url);
+      const textArticles  = articles.filter(a => !a.video_url).slice(0, 4);
+      const display = [...videoArticles.slice(0, 2), ...textArticles].slice(0, 5);
+
+      const html = display.map(a => `
+        <div class="newspaper-item">
+          ${a.image_url ? `<img src="${toHttps(a.image_url)}" class="newspaper-thumb" style="height:70px;object-fit:cover;margin-bottom:6px" onerror="this.style.display='none'" loading="lazy"/>` : ''}
+          <div class="newspaper-title">
+            <a href="${a.video_url || a.link}" target="_blank">
+              ${a.video_url ? '▶ ' : ''}${(a.title || '').substring(0,90)}
+            </a>
+          </div>
+          <div class="newspaper-meta">${a.pubDate?.substring(0,10) || ''} · ${a.source_id || 'NewsData'}</div>
+          ${a.description ? `<div class="newspaper-snippet">${a.description.substring(0,120)}…</div>` : ''}
+        </div>`).join('');
+      appendGoodie(grid, '🗞️', 'News Coverage', html, 'NewsData.io');
+      return;
+    }
+  } catch {}
+}
+
+// ─── GOODIE 21: INTERNET ARCHIVE TEXTS & MAGAZINE RACK ───────────────
+// Searches print media — magazines (NatGeo, Life, Time), books, pamphlets
+async function loadArchiveTexts(grid, queries, year) {
+  try {
+    for (const q of queries.slice(0, 3)) {
+      // Search Magazine Rack first for richer publications
+      const [magData, textData] = await Promise.allSettled([
+        fetch(`/api/archive/texts?q=${encodeURIComponent(q)}&collection=magazine_rack&rows=4`).then(r=>r.json()),
+        fetch(`/api/archive/texts?q=${encodeURIComponent(q)}&rows=4`).then(r=>r.json()),
+      ]);
+
+      const mags  = magData.status  === 'fulfilled' ? magData.value.response?.docs  || [] : [];
+      const texts = textData.status === 'fulfilled' ? textData.value.response?.docs || [] : [];
+
+      // Merge, deduplicate, prefer magazines
+      const seen = new Set();
+      const items = [];
+      for (const item of [...mags, ...texts]) {
+        if (!seen.has(item.identifier) && item.title) {
+          seen.add(item.identifier);
+          items.push(item);
+        }
+      }
+      if (!items.length) continue;
+
+      const html = items.slice(0, 6).map(item => `
+        <div class="book-item">
+          <div class="book-cover">
+            <a href="https://archive.org/details/${item.identifier}" target="_blank">
+              <img src="https://archive.org/services/img/${item.identifier}"
+                style="width:48px;height:64px;object-fit:cover;border:1px solid var(--gold)"
+                onerror="this.parentElement.innerHTML='<div class=\'book-cover-placeholder\' style=\'background:var(--brown)\'></div>'"
+                loading="lazy"/>
+            </a>
+          </div>
+          <div style="flex:1">
+            <div class="book-title">
+              <a href="https://archive.org/details/${item.identifier}" target="_blank">
+                ${(item.title || 'Untitled').substring(0,80)}
+              </a>
+            </div>
+            <div class="book-author">${(item.creator || '').substring(0,50)}${item.date ? ' · ' + item.date.substring(0,4) : ''}</div>
+            <span class="book-type">Internet Archive · Free to Read</span>
+          </div>
+        </div>`).join('');
+
+      const hasMags = mags.length > 0;
+      appendGoodie(grid, '📖', hasMags ? 'Magazines & Print Media' : 'Historical Texts & Documents', html,
+        'Internet Archive · ' + (hasMags ? 'Magazine Rack · ' : '') + 'Open Library');
+      return;
+    }
+  } catch {}
 }

@@ -199,6 +199,45 @@ async function enrichEvents(events) {
       const peopleNames = peopleSummaries.filter(Boolean).map(p => p.name);
       const curated    = getCurated(pageTitle + ' ' + (ev.text||''), peopleNames);
 
+      // Build query expansion — multiple search variants for richer API results
+      const pageTitle  = ev.pages?.[0]?.title || '';
+      const eventYear  = parseInt(ev.year) || 0;
+      const peopleNames = peopleSummaries.filter(Boolean).map(p => p.name);
+
+      // Extract geographic/kingdom terms from full text
+      const geoMatches = fullText.match(/\b(Kingdom|Duchy|County|Empire|Republic|Principality|Caliphate|Sultanate|Dynasty)\s+of\s+[A-Z][a-zA-Z\s]{2,20}/g) || [];
+      const geoTerms = [...new Set(geoMatches.map(m => m.trim()))].slice(0, 2);
+
+      // Era label for broader context searches
+      const eraMap = {
+        ancient: 'Ancient', early_medieval: 'Early Medieval', medieval: 'Medieval',
+        renaissance: 'Renaissance', early_modern: 'Early Modern', modern: 'Modern',
+        early_20c: '20th Century', late_20c: '20th Century', contemporary: ''
+      };
+      const getEraLabel = y => {
+        if (y < 500) return 'Ancient';
+        if (y < 1000) return 'Early Medieval';
+        if (y < 1400) return 'Medieval';
+        if (y < 1600) return 'Renaissance';
+        if (y < 1776) return 'Early Modern';
+        if (y < 1900) return 'Modern';
+        return '';
+      };
+      const eraLabel = getEraLabel(eventYear);
+
+      // Build ordered query list — most specific first
+      const queryExpansion = [
+        pageTitle,                                    // exact article title
+        ...peopleNames.slice(0, 2),                  // key figures
+        ...geoTerms.slice(0, 2),                     // kingdoms/regions
+        eraLabel && peopleNames[0]
+          ? `${eraLabel} ${peopleNames[0].split(' ')[0]}`
+          : null,                                    // "Medieval Roger"
+        eraLabel && geoTerms[0]
+          ? `${eraLabel} ${geoTerms[0].split(' ').slice(-1)[0]}`
+          : null,                                    // "Medieval Sicily"
+      ].filter(Boolean).filter((q, i, a) => a.indexOf(q) === i).slice(0, 6);
+
       return {
         ...ev,
         fullText,
@@ -207,6 +246,7 @@ async function enrichEvents(events) {
         peopleSummaries: peopleSummaries.filter(Boolean),
         coordinates: article?.coordinates || ev.pages?.[0]?.coordinates || null,
         infoboxMapUrl: article?.infoboxMapUrl || null,
+        queryExpansion,
         curated
       };
     } catch { return ev; }
@@ -254,7 +294,7 @@ async function buildDailyEvents() {
 async function ensureDailyEvents() {
   if (!redis) return;
   const today    = new Date().toISOString().split('T')[0];
-  const cacheKey = `pable:events:v5:${today}`;
+  const cacheKey = `pable:events:v6:${today}`;
   const cached   = await redis.get(cacheKey);
   if (cached) { console.log('Events cached for', today); return; }
   try {
@@ -283,7 +323,7 @@ scheduleMidnightRefresh();
 app.get('/api/events/today', async (req, res) => {
   try {
     const today    = new Date().toISOString().split('T')[0];
-    const cacheKey = `pable:events:v5:${today}`;
+    const cacheKey = `pable:events:v6:${today}`;
     if (redis) {
       const cached = await redis.get(cacheKey);
       if (cached) return res.json(JSON.parse(cached));
@@ -504,7 +544,7 @@ app.post('/api/cache/clear', async (req, res) => {
     const now = new Date(), midnight = new Date(now);
     midnight.setHours(24,0,0,0);
     const ttl = Math.floor((midnight-now)/1000);
-    await redis.setEx(`pable:events:v5:${today}`, ttl, JSON.stringify(events));
+    await redis.setEx(`pable:events:v6:${today}`, ttl, JSON.stringify(events));
     res.json({ ok: true, built: events.length, ttl });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -561,9 +601,76 @@ app.get('/api/health', async (req, res) => {
       google_books: !!process.env.GOOGLE_BOOKS_API_KEY,
       youtube:      !!process.env.YOUTUBE_API_KEY,
       numista:      !!process.env.NUMISTA_API_KEY,
+      guardian:     !!process.env.GUARDIAN_API_KEY,
+      newsdata:     !!process.env.NEWSDATA_API_KEY,
     }
   });
 });
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname,'public','index.html')));
 app.listen(PORT, () => console.log(`Pable v3 on port ${PORT}`));
+
+// ─── GDELT TV News — broadcast news clips, no key needed ─────────────
+// Covers 150+ stations, 2009–Oct 2024, clips stream from Internet Archive
+app.get('/api/gdelt/tv', async (req, res) => {
+  const { q, mode = 'clipgallery', maxrecords = 5 } = req.query;
+  try {
+    // GDELT TV API — returns JSON clip gallery
+    const url = `https://api.gdeltproject.org/api/v2/tv/tv?query=${encodeURIComponent(q)}&mode=${mode}&format=json&maxrecords=${maxrecords}&TIMESPAN=FULL`;
+    const data = await apiFetch(url);
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GDELT DOC API — global news articles, last 3 months, no key needed
+app.get('/api/gdelt/doc', async (req, res) => {
+  const { q, maxrecords = 10 } = req.query;
+  try {
+    const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(q)}&mode=ArtList&format=json&maxrecords=${maxrecords}&sort=DateDesc`;
+    const data = await apiFetch(url);
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── The Guardian API ─────────────────────────────────────────────────
+// 2.4M articles back to 1999, video content filter
+app.get('/api/guardian', async (req, res) => {
+  const key = process.env.GUARDIAN_API_KEY;
+  if (!key) return res.status(500).json({ error: 'Guardian key missing' });
+  const { q, tag = '', pageSize = 6 } = req.query;
+  try {
+    // Search with optional video tag filter
+    const tagParam = tag ? `&tag=${encodeURIComponent(tag)}` : '';
+    const url = `https://content.guardianapis.com/search?q=${encodeURIComponent(q)}&show-fields=thumbnail,trailText,shortUrl,headline&page-size=${pageSize}${tagParam}&api-key=${key}`;
+    const data = await apiFetch(url);
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── NewsData.io ──────────────────────────────────────────────────────
+// Historical news with video_url field, 200 calls/day free
+app.get('/api/newsdata', async (req, res) => {
+  const key = process.env.NEWSDATA_API_KEY;
+  if (!key) return res.status(500).json({ error: 'NewsData key missing' });
+  const { q, language = 'en' } = req.query;
+  try {
+    const url = `https://newsdata.io/api/1/archive?apikey=${key}&q=${encodeURIComponent(q)}&language=${language}&prioritydomain=top`;
+    const data = await apiFetch(url);
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Internet Archive Texts & Magazine Rack ───────────────────────────
+// Searches text/print media including Magazine Rack collection
+app.get('/api/archive/texts', async (req, res) => {
+  const { q, collection = '', rows = 6 } = req.query;
+  try {
+    // Build collection filter — Magazine Rack or general texts
+    const collectionFilter = collection
+      ? `+collection:${collection}`
+      : '+(collection:magazine_rack OR mediatype:texts)';
+    const url = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(q)}${collectionFilter}&fl[]=identifier,title,creator,date,description,subject&sort[]=downloads+desc&rows=${rows}&page=1&output=json`;
+    const data = await apiFetch(url);
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
