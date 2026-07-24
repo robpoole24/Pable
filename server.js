@@ -129,12 +129,34 @@ async function fetchFullArticle(title) {
     if (mapImage) {
       try {
         const imgTitle  = encodeURIComponent(mapImage.title.replace('File:',''));
+        // Request at 800px wide — Wikimedia auto-converts SVG to PNG at this width
         const imgInfo   = await apiFetch(
-          `https://en.wikipedia.org/w/api.php?action=query&titles=File:${imgTitle}&prop=imageinfo&iiprop=url&iiurlwidth=600&format=json&origin=*`
+          `https://en.wikipedia.org/w/api.php?action=query&titles=File:${imgTitle}&prop=imageinfo&iiprop=url|thumburl&iiurlwidth=800&format=json&origin=*`
         );
         const imgData   = imgInfo?.query?.pages;
-        infoboxMapUrl   = imgData ? Object.values(imgData)[0]?.imageinfo?.[0]?.url : null;
+        const imgEntry  = imgData ? Object.values(imgData)[0]?.imageinfo?.[0] : null;
+        // Prefer thumburl (rasterized PNG) over url (raw SVG)
+        infoboxMapUrl   = imgEntry?.thumburl || imgEntry?.url || null;
       } catch {}
+    }
+
+    // If no map found via keyword filter, try the first image that looks like a map
+    if (!infoboxMapUrl) {
+      const fallbackMap = imgList.find(i =>
+        /southern|northern|eastern|western|region|territory|kingdom|empire|province|italy|sicily|france|england|spain|egypt|roman|medieval|byzantine|ottoman|battle.*map/i.test(i.title) &&
+        /\.(png|jpg|jpeg|svg)$/i.test(i.title)
+      );
+      if (fallbackMap) {
+        try {
+          const imgTitle = encodeURIComponent(fallbackMap.title.replace('File:',''));
+          const imgInfo  = await apiFetch(
+            `https://en.wikipedia.org/w/api.php?action=query&titles=File:${imgTitle}&prop=imageinfo&iiprop=url|thumburl&iiurlwidth=800&format=json&origin=*`
+          );
+          const imgData  = imgInfo?.query?.pages;
+          const imgEntry = imgData ? Object.values(imgData)[0]?.imageinfo?.[0] : null;
+          infoboxMapUrl  = imgEntry?.thumburl || imgEntry?.url || null;
+        } catch {}
+      }
     }
 
     return { ...summary, fullText, infoboxMapUrl };
@@ -361,7 +383,7 @@ app.get('/api/youtube', async (req, res) => {
         : type === 'docs' ? `${query} documentary history`
         : query;
       const data = await apiFetch(
-        `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(searchQ)}&type=video&videoEmbeddable=true&maxResults=6&relevanceLanguage=en&key=${key}`
+        `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(searchQ)}&type=video&videoEmbeddable=true&maxResults=8&relevanceLanguage=en&videoDuration=any&key=${key}`
       );
       const found = data.items || [];
       // Deduplicate
@@ -439,6 +461,33 @@ app.get('/api/ocre', async (req, res) => {
     );
     res.json(data);
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Cache status — check what's currently cached
+app.get('/api/cache/status', async (req, res) => {
+  if (!redis) return res.status(503).json({ error: 'Redis not connected' });
+  const today = new Date().toISOString().split('T')[0];
+  const results = {};
+  for (const v of ['v3','v4','v5']) {
+    const key  = `pable:events:${v}:${today}`;
+    const raw  = await redis.get(key).catch(()=>null);
+    const ttl  = await redis.ttl(key).catch(()=>-1);
+    if (raw) {
+      const events = JSON.parse(raw);
+      const sample = events[0];
+      results[key] = {
+        count:      events.length,
+        ttl_seconds: ttl,
+        hasCurated: !!sample?.curated,
+        hasFullText: !!sample?.fullText,
+        hasInfboxMap: !!sample?.infoboxMapUrl,
+        sampleTitle: sample?.pages?.[0]?.title || sample?.text?.substring(0,60)
+      };
+    } else {
+      results[key] = null;
+    }
+  }
+  res.json(results);
 });
 
 // Cache clear — force rebuild of today's events (admin use)
