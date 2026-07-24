@@ -14,9 +14,20 @@ let cpiCache = null; // Cache the FRED CPI data — expensive to fetch repeatedl
 
 // ─── Init ─────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  renderApp();
+  // App loads in background while splash is showing
   loadTodayEvents();
 });
+
+function enterApp() {
+  const splash = document.getElementById('splash');
+  const app = document.getElementById('app');
+  splash.classList.add('hidden');
+  setTimeout(() => {
+    splash.style.display = 'none';
+    app.style.display = 'block';
+    renderApp();
+  }, 500);
+}
 
 function renderApp() {
   const today = new Date();
@@ -27,8 +38,8 @@ function renderApp() {
     <div class="pable-root">
       <div class="pable-header">
         <div class="pable-header-eyebrow">A Living History</div>
-        <h1>Pable</h1>
-        <div class="pable-header-sub">History as Mr. Pable taught it — deep, demanding, and alive</div>
+        <h1 class="pable-wordmark">Pable</h1>
+        <div class="pable-header-sub font-18c">History as Mr. Pable taught it — deep, demanding, and alive</div>
       </div>
       <div class="pable-date-banner">This Day in History — ${monthName} ${day}</div>
       <div id="main-content"></div>
@@ -77,7 +88,7 @@ function renderEventCard(ev, i) {
     <div class="event-card" data-index="${i}">
       <div class="event-card-inner">
         <div class="event-card-year">${year}</div>
-        <div class="event-card-title">${title}</div>
+        <div class="event-card-title font-18c">${title}</div>
         <div style="clear:both"></div>
         <div class="event-card-teaser">${teaser.substring(0, 160)}${teaser.length > 160 ? '…' : ''}</div>
         <div class="event-card-open-hint">Open ↓</div>
@@ -131,7 +142,7 @@ function openEvent(ev) {
     <div class="event-expanded">
       <div class="event-expanded-header">
         <div class="event-expanded-year">${year}</div>
-        <div class="event-expanded-title">${title}</div>
+        <div class="event-expanded-title font-18c">${title}</div>
       </div>
       <button class="back-btn" id="back-btn">← All Events</button>
       <div class="event-summary">
@@ -197,7 +208,7 @@ async function loadGoodies(ev) {
   const primaryKeyword = pageTitle || title.split(' ').slice(0, 4).join(' ');
 
   container.innerHTML = `
-    <div class="goodies-title">Pable's Goodies</div>
+    <div class="goodies-title font-18c">Pable's Goodies</div>
     <div class="goodies-container">
       <div id="g-images"></div>
       <div id="g-video"></div>

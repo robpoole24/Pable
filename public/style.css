@@ -1,3 +1,18 @@
+/* ── Custom Fonts ─────────────────────────────────────────────────────── */
+@font-face {
+  font-family: 'USDeclaration';
+  src: url('zai_USDeclaration.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: '18thCentury';
+  src: url('18thCentury.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
 /* ── Reset & Base ─────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -357,6 +372,86 @@ audio { width: 100%; height: 32px; margin-top: 6px; }
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--parchment); }
 ::-webkit-scrollbar-thumb { background: var(--gold); border-radius: 3px; }
+
+/* ── Splash Screen ───────────────────────────────────────────────────── */
+#splash {
+  background: #F2E8D5;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+  animation: fadeIn 0.6s ease;
+}
+
+#splash-logo {
+  width: 100%;
+  max-width: 480px;
+  height: auto;
+  animation: splashDrop 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+#splash-tagline {
+  font-family: '18thCentury', 'Crimson Pro', serif;
+  font-size: 18px;
+  color: var(--ink-light);
+  letter-spacing: 2px;
+  margin-top: 8px;
+  text-align: center;
+  animation: fadeIn 1.2s ease both;
+}
+
+#splash-enter {
+  font-family: 'Courier Prime', monospace;
+  font-size: 13px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--brown);
+  margin-top: 32px;
+  cursor: pointer;
+  border: 1px solid var(--gold);
+  padding: 10px 28px;
+  border-radius: 2px;
+  background: var(--parchment-dark);
+  transition: background 0.15s, box-shadow 0.15s;
+  animation: fadeIn 1.6s ease both;
+}
+
+#splash-enter:hover {
+  background: var(--parchment);
+  box-shadow: 2px 2px 0 var(--brown);
+}
+
+#splash.hidden {
+  animation: splashFadeOut 0.5s ease forwards;
+}
+
+@keyframes splashDrop {
+  from { opacity: 0; transform: translateY(-20px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes splashFadeOut {
+  from { opacity: 1; }
+  to   { opacity: 0; pointer-events: none; }
+}
+
+/* ── Custom Font Usage ───────────────────────────────────────────────── */
+
+/* USDeclaration script — Pable wordmark in app header only */
+.pable-wordmark {
+  font-family: 'USDeclaration', cursive;
+  font-size: 56px;
+  color: var(--parchment-light);
+  line-height: 1.05;
+  letter-spacing: 1px;
+}
+
+/* 18thCentury — section headers, event titles, goodies title */
+.font-18c {
+  font-family: '18thCentury', 'Crimson Pro', serif;
+}
 
 /* ── Responsive ──────────────────────────────────────────────────────── */
 @media (max-width: 480px) {
