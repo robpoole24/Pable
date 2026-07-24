@@ -365,12 +365,7 @@ audio { width: 100%; height: 32px; margin-top: 6px; }
 /* ── Animations ──────────────────────────────────────────────────────── */
 @keyframes fadeIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
 @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
-@keyframes sealBreak {
-  0% { transform: scale(1); }
-  30% { transform: scale(1.1) rotate(3deg); }
-  60% { transform: scale(0.97) rotate(-1deg); }
-  100% { transform: scale(1) rotate(0deg); opacity: 0.65; }
-}
+/* seal styles moved to v3.8 section below */
 
 /* ── Scrollbar ───────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; }
@@ -849,4 +844,37 @@ audio { width: 100%; height: 32px; margin-top: 6px; }
   padding: 4px 8px;
   opacity: 0.7;
   background: var(--parchment-dark);
+}
+
+/* ── Wax Seal ─────────────────────────────────────────────────── */
+.seal-wrapper {
+  text-align: center;
+  padding: 24px 0 8px;
+  user-select: none;
+}
+.seal-img-wrap {
+  display: inline-block;
+  cursor: pointer;
+  transition: transform 0.15s;
+  filter: drop-shadow(2px 4px 8px rgba(0,0,0,0.4));
+}
+.seal-img-wrap:hover { transform: scale(1.06) rotate(-2deg); }
+.seal-img {
+  width: 140px;
+  height: 140px;
+  display: block;
+}
+/* Sprite div — same size, shows sprite sheet via background-image */
+.seal-sprite {
+  width: 140px;
+  height: 140px;
+  background-image: url('wax_seal_sprite.png');
+  background-size: 1540px 140px; /* 11 frames × 140px */
+  background-repeat: no-repeat;
+  background-position: 0 0;
+}
+.seal-label {
+  font-family: 'Courier Prime', monospace;
+  font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--ink-light); margin-top: 10px;
 }

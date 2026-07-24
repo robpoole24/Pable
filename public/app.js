@@ -219,15 +219,10 @@ function openEvent(ev, pushHistory = true) {
         ${wikiUrl ? `<a class="wiki-link" href="${wikiUrl}" target="_blank">Full Wikipedia article →</a>` : ''}
       </div>
       <div class="seal-wrapper">
-        <svg id="wax-seal" width="90" height="90" viewBox="0 0 90 90" class="seal-svg">
-          <circle cx="45" cy="45" r="42" fill="#8B1A1A"/>
-          <circle cx="45" cy="45" r="37" fill="none" stroke="#C0392B" stroke-width="1.5"/>
-          ${Array.from({length:12},(_,i)=>{
-            const r=i*30*Math.PI/180;
-            return `<line x1="${(45+42*Math.cos(r)).toFixed(1)}" y1="${(45+42*Math.sin(r)).toFixed(1)}" x2="${(45+35*Math.cos(r+.26)).toFixed(1)}" y2="${(45+35*Math.sin(r+.26)).toFixed(1)}" stroke="#C0392B" stroke-width="1" opacity="0.4"/>`;
-          }).join('')}
-          <text x="42" y="56" text-anchor="middle" dominant-baseline="middle" font-family="'USDeclaration',cursive,serif" font-size="30" fill="#F8F2E6">P</text>
-        </svg>
+        <div id="wax-seal" class="seal-img-wrap">
+          <img id="seal-img" src="wax_seal.png" alt="Wax Seal" class="seal-img"/>
+          <div id="seal-sprite" class="seal-sprite" style="display:none"></div>
+        </div>
         <div class="seal-label" id="seal-label">Break the Seal · Open the Goodies</div>
       </div>
       <div id="goodies-container"></div>
@@ -243,18 +238,39 @@ function openEvent(ev, pushHistory = true) {
 function breakSeal() {
   if (sealBroken) return;
   sealBroken = true;
-  const seal = document.getElementById('wax-seal');
-  seal.classList.add('broken');
-  seal.style.cursor = 'default';
-  const crack = document.createElementNS('http://www.w3.org/2000/svg','polyline');
-  crack.setAttribute('points','45,3 50,20 42,38 52,58 45,87');
-  crack.setAttribute('stroke','#F8F2E6');
-  crack.setAttribute('stroke-width','2');
-  crack.setAttribute('fill','none');
-  crack.setAttribute('opacity','0.8');
-  seal.appendChild(crack);
-  document.getElementById('seal-label').textContent = 'Goodies Opened';
-  loadAllGoodies(selectedEvent);
+
+  const wrap   = document.getElementById('wax-seal');
+  const img    = document.getElementById('seal-img');
+  const sprite = document.getElementById('seal-sprite');
+  const label  = document.getElementById('seal-label');
+
+  wrap.style.cursor = 'default';
+  label.textContent = 'Opening…';
+
+  // Sprite animation — 11 frames across wax_seal_sprite.png
+  // Each frame is 180px wide; we step through them left to right
+  const FRAMES     = 11;
+  const FRAME_W    = 180;
+  const FRAME_MS   = 80; // ms per frame — total ~880ms
+  let   currentFrame = 0;
+
+  img.style.display    = 'none';
+  sprite.style.display = 'block';
+
+  const tick = setInterval(() => {
+    const offset = -(currentFrame * FRAME_W);
+    sprite.style.backgroundPosition = `${offset}px 0`;
+    currentFrame++;
+    if (currentFrame >= FRAMES) {
+      clearInterval(tick);
+      // Hold last frame briefly then fade out
+      setTimeout(() => {
+        wrap.style.opacity = '0.7';
+        label.textContent  = 'Goodies Opened';
+        loadAllGoodies(selectedEvent);
+      }, 200);
+    }
+  }, FRAME_MS);
 }
 
 // ─── LOAD ALL GOODIES ─────────────────────────────────────────────────
@@ -329,7 +345,7 @@ async function loadAllGoodies(ev) {
     // 11. Thesaurus
     archaicTerms.length ? loadThesaurus(grid, archaicTerms[0]) : null,
     // 12. Life & Society context
-    loadLifeAndSociety(grid, keyword, year, fullText),
+    loadLifeAndSociety(grid, keyword, year, fullText, curatedPeopleNames),
     // 13. Music
     loadMusic(grid, year, keyword),
     // 14. Books (API results + curated known works)
@@ -976,43 +992,78 @@ async function loadThesaurus(grid, word) {
 
 // ─── GOODIE 12: LIFE & SOCIETY ───────────────────────────────────────
 // Pull Wikipedia articles on the key places/regions for social context
-async function loadLifeAndSociety(grid, keyword, year, fullText) {
-  // Extract place names from the article
-  const placePatterns = [
-    /\bin\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/g,
-    /\bof\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/g,
-  ];
-  const places = new Set();
-  for (const pat of placePatterns) {
-    let m;
-    while ((m = pat.exec(fullText)) !== null) {
-      const place = m[1];
-      if (place.length > 3 && !/^(The|This|That|His|Her|Their|Our|Its|All|Both|Each)$/.test(place)) {
-        places.add(place);
-        if (places.size >= 3) break;
-      }
+async function loadLifeAndSociety(grid, keyword, year, fullText, curatedPeopleNames=[]) {
+  // Build a set of context queries — things worth knowing about the world of this event
+  // Use Wikipedia search (not direct title lookup) so we find real articles, not 404s
+  const contextItems = [];
+
+  // 1. Kingdom / Duchy / region — extract multi-word proper nouns that are places
+  //    Pattern: "Kingdom of X", "Duchy of X", "County of X", "City of X", "Republic of X"
+  const regionPat = /(Kingdom|Duchy|County|Principality|Republic|Empire|City|Emirate|Caliphate|Sultanate)\s+of\s+([A-Z][a-zA-Z\s]{2,20}?)(?=[,\.\s])/g;
+  let m;
+  while ((m = regionPat.exec(fullText)) !== null) {
+    const region = `${m[1]} of ${m[2].trim()}`;
+    if (!contextItems.find(c => c.query === region)) {
+      contextItems.push({ label: region, query: region, type: 'place' });
+      if (contextItems.length >= 2) break;
     }
-    if (places.size >= 3) break;
   }
 
-  const placeList = [...places].slice(0,2);
-  if (!placeList.length) return;
+  // 2. If we have curated people, add social-context queries for their kingdoms/eras
+  //    e.g. "Norman Sicily" for Roger II, "Medieval Capua" for Robert II of Capua
+  if (contextItems.length < 2 && curatedPeopleNames.length) {
+    // Build era-aware regional context queries
+    const eraWord = year < 500 ? 'Ancient' : year < 1000 ? 'Early Medieval'
+      : year < 1400 ? 'Medieval' : year < 1600 ? 'Renaissance' : '';
+    // Extract the main geographic noun from keyword
+    const geoWord = keyword.split(/\s+/).find(w =>
+      w.length > 4 && /^[A-Z]/.test(w) &&
+      !['Battle','War','Treaty','Siege','Death','Birth','Fall','Rise'].includes(w)
+    );
+    if (geoWord && eraWord) {
+      contextItems.push({ label: `${eraWord} ${geoWord}`, query: `${eraWord} ${geoWord}`, type: 'context' });
+    }
+  }
 
-  const summaries = await Promise.all(placeList.map(async place=>{
+  // 3. Fallback — use the event keyword itself searched via Wikipedia
+  if (!contextItems.length) {
+    contextItems.push({ label: keyword.split(' ').slice(0,3).join(' '), query: keyword, type: 'context' });
+  }
+
+  // Fetch Wikipedia summaries using SEARCH not direct title — avoids 404s
+  const summaries = await Promise.all(contextItems.slice(0,2).map(async item => {
     try {
-      // Look for "Medieval [place]", "[place] in the Middle Ages", etc.
-      const contextQuery = year < 1500
-        ? `${place} in the Middle Ages`
-        : year < 1800 ? `${place} early modern history`
-        : `${place}`;
-      const encoded = encodeURIComponent(contextQuery.replace(/ /g,'_'));
+      // Search Wikipedia for best matching article
+      const searchRes = await fetch(
+        `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(item.query)}&srlimit=1&format=json&origin=*`
+      ).then(r => r.json());
+
+      const topResult = searchRes.query?.search?.[0];
+      if (!topResult) return null;
+
+      // Fetch summary for the actual article found
+      const encoded = encodeURIComponent(topResult.title.replace(/ /g,'_'));
       const data = await fetch(
         `https://en.wikipedia.org/api/rest_v1/page/summary/${encoded}`,
-        {headers:{'User-Agent':'PableHistoryApp/3.0 (educational; robpoole24@gmail.com)'}}
-      ).then(r=>r.json());
-      if (!data.extract || data.type==='disambiguation') return null;
-      return { place, extract:data.extract.substring(0,400), url:data.content_urls?.desktop?.page,
-               thumbnail:data.thumbnail?.source };
+        { headers: { 'User-Agent': 'PableHistoryApp/3.0 (educational; robpoole24@gmail.com)' } }
+      ).then(r => r.json());
+
+      if (!data.extract || data.type === 'disambiguation') return null;
+
+      // Sanity check — make sure the result is actually relevant
+      // (search sometimes returns unrelated articles)
+      const queryWords = item.query.toLowerCase().split(' ').filter(w => w.length > 3);
+      const titleLower = data.title.toLowerCase();
+      const relevant   = queryWords.some(w => titleLower.includes(w));
+      if (!relevant) return null;
+
+      return {
+        label:     item.label,
+        title:     data.title,
+        extract:   data.extract.substring(0, 450),
+        url:       data.content_urls?.desktop?.page,
+        thumbnail: data.thumbnail?.source
+      };
     } catch { return null; }
   }));
 
@@ -1020,15 +1071,15 @@ async function loadLifeAndSociety(grid, keyword, year, fullText) {
   if (!valid.length) return;
 
   const html = `
-    <p class="goodie-context">Understanding the people, places, and daily life behind this event.</p>
-    ${valid.map(s=>`
+    <p class="goodie-context">The world behind this event — kingdoms, territories, and context.</p>
+    ${valid.map(s => `
       <div class="society-item">
-        ${s.thumbnail?`<img src="${s.thumbnail}" class="society-thumb" onerror="this.style.display='none'" loading="lazy"/>` :''}
-        <div class="society-name">${s.place}</div>
+        ${s.thumbnail ? `<img src="${s.thumbnail}" class="society-thumb" onerror="this.style.display='none'" loading="lazy"/>` : ''}
+        <div class="society-name">${s.title}</div>
         <div class="society-extract">${s.extract}</div>
-        ${s.url?`<a href="${s.url}" target="_blank" class="archive-link">Read more →</a>`:''}
+        ${s.url ? `<a href="${s.url}" target="_blank" class="archive-link">Read more →</a>` : ''}
       </div>`).join('')}`;
-  appendGoodie(grid,'🏘️','Life & Society',html,'Wikipedia');
+  appendGoodie(grid, '🏘️', 'Life & Society', html, 'Wikipedia');
 }
 
 // ─── GOODIE 13: MUSIC ────────────────────────────────────────────────
