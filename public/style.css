@@ -826,3 +826,27 @@ audio { width: 100%; height: 32px; margin-top: 6px; }
   margin-bottom: 4px;
   opacity: 0.85;
 }
+
+/* ── Infobox Map ─────────────────────────────────────────────────── */
+.infobox-map-wrap {
+  margin-bottom: 16px;
+  border: 1px solid var(--gold);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.infobox-map {
+  width: 100%;
+  display: block;
+  max-height: 300px;
+  object-fit: contain;
+  background: var(--parchment-dark);
+}
+.infobox-map-caption {
+  font-family: 'Courier Prime', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--ink-light);
+  padding: 4px 8px;
+  opacity: 0.7;
+  background: var(--parchment-dark);
+}

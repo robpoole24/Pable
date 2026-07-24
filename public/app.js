@@ -210,6 +210,11 @@ function openEvent(ev, pushHistory = true) {
       <button class="back-btn" id="back-btn">← All Events</button>
       <div class="event-summary">
         ${ev.curated?.context ? `<div class="curated-context">${ev.curated.context}</div>` : ''}
+        ${ev.infoboxMapUrl ? `
+          <div class="infobox-map-wrap">
+            <img src="${ev.infoboxMapUrl}" class="infobox-map" alt="Map of ${title}" loading="lazy"/>
+            <div class="infobox-map-caption">Map · Wikipedia</div>
+          </div>` : ''}
         ${paragraphs.map(p=>`<p>${p}</p>`).join('')}
         ${wikiUrl ? `<a class="wiki-link" href="${wikiUrl}" target="_blank">Full Wikipedia article →</a>` : ''}
       </div>
@@ -221,7 +226,7 @@ function openEvent(ev, pushHistory = true) {
             const r=i*30*Math.PI/180;
             return `<line x1="${(45+42*Math.cos(r)).toFixed(1)}" y1="${(45+42*Math.sin(r)).toFixed(1)}" x2="${(45+35*Math.cos(r+.26)).toFixed(1)}" y2="${(45+35*Math.sin(r+.26)).toFixed(1)}" stroke="#C0392B" stroke-width="1" opacity="0.4"/>`;
           }).join('')}
-          <text x="45" y="58" text-anchor="middle" dominant-baseline="middle" font-family="'USDeclaration',cursive,serif" font-size="30" fill="#F8F2E6">P</text>
+          <text x="42" y="56" text-anchor="middle" dominant-baseline="middle" font-family="'USDeclaration',cursive,serif" font-size="30" fill="#F8F2E6">P</text>
         </svg>
         <div class="seal-label" id="seal-label">Break the Seal · Open the Goodies</div>
       </div>
@@ -276,11 +281,15 @@ async function loadAllGoodies(ev) {
   // Curated resources — handcrafted for specific events
   const curated = ev.curated || { videos: [], books: [], coins: [], context: null };
 
-  // Key figure names from the event title (first 2-3 proper nouns)
-  const titlePeople = entities.people?.slice(0,3) || [];
-  // Build fallback YouTube queries
-  const fallbackQuery1 = titlePeople[0] || keyword.split(' ').slice(0,3).join(' ');
-  const fallbackQuery2 = `${eraLabel(year)} history ${keyword.split(' ')[0]}`;
+  // Key figure names — use enriched peopleSummaries first, fall back to entity extraction
+  // peopleSummaries are Wikipedia-verified; entities.people is raw text extraction
+  const titlePeople = people.length
+    ? people.map(p => p.name).slice(0,3)
+    : entities.people?.slice(0,3) || [];
+  // Build fallback YouTube queries — use curated people names when available
+  const curatedPeopleNames = curated.people?.map(p => p.name) || [];
+  const fallbackQuery1 = curatedPeopleNames[0] || titlePeople[0] || keyword.split(' ').slice(0,3).join(' ');
+  const fallbackQuery2 = curatedPeopleNames[1] || `${eraLabel(year)} history ${keyword.split(' ').slice(0,2).join(' ')}`;
 
   container.innerHTML = `
     <div class="goodies-title">Pable's Goodies</div>
@@ -288,18 +297,21 @@ async function loadAllGoodies(ev) {
   `;
   const grid = document.getElementById('goodies-grid');
 
+  // Merge curated people names into query list — these are the most precise
+  const queryPeople = curatedPeopleNames.length ? curatedPeopleNames : titlePeople;
+
   // Fire all in parallel — each appends itself when ready
   const loaders = [
     // 0. Curated videos (specific known videos for this event)
     curated.videos?.length ? loadCuratedVideos(grid, curated.videos) : null,
     // 1. Key figures dossiers (people cards) — curated first, API fallback
     loadPeopleDossiers(grid, people, year, curated.people),
-    // 2. Images (includes Met Museum)
-    loadImages(grid, keyword, year, isSpace, titlePeople),
-    // 2b. Met Museum dedicated goodie — arms & armor, coins, manuscripts, artifacts
-    loadMetArtifacts(grid, keyword, year, titlePeople),
-    // 3. Coins (if ancient/medieval ruler involved, or curated coins exist)
-    (isRoman || isMedieval || curated.coins?.length) ? loadCoins(grid, keyword, titlePeople, isRoman, curated.coins) : null,
+    // 2. Images — use curated people names for precision
+    loadImages(grid, keyword, year, isSpace, queryPeople),
+    // 2b. Met Museum dedicated goodie
+    loadMetArtifacts(grid, keyword, year, queryPeople),
+    // 3. Coins — curated coins first, then API with curated people names
+    (isRoman || isMedieval || curated.coins?.length) ? loadCoins(grid, keyword, queryPeople, isRoman, curated.coins) : null,
     // 4. YouTube documentaries (layered queries)
     loadYouTubeDocs(grid, keyword, fallbackQuery1, fallbackQuery2),
     // 5. YouTube news (post-1950)
@@ -311,7 +323,7 @@ async function loadAllGoodies(ev) {
     // 8. Historic newspapers (1770–1963)
     hasNewspaper ? loadNewspapers(grid, keyword, year) : null,
     // 9. Primary sources / chronicles (pre-1600)
-    year < 1600 ? loadPrimarySources(grid, keyword, year, titlePeople) : null,
+    year < 1600 ? loadPrimarySources(grid, keyword, year, queryPeople) : null,
     // 10. Etymology (archaic terms only)
     archaicTerms.length ? loadEtymology(grid, archaicTerms) : null,
     // 11. Thesaurus
@@ -321,11 +333,11 @@ async function loadAllGoodies(ev) {
     // 13. Music
     loadMusic(grid, year, keyword),
     // 14. Books (API results + curated known works)
-    loadBooks(grid, keyword, title, titlePeople, year, curated.books),
+    loadBooks(grid, keyword, title, queryPeople, year, curated.books),
     // 15. Inflation (only if currency mentioned)
     currencyMention ? loadInflation(grid, currencyMention, year) : null,
     // 16. Map
-    coords ? loadMap(grid, coords, keyword, year) : null,
+    coords ? loadMap(grid, coords, keyword, year, ev.infoboxMapUrl) : null,
     // 17. NASA imagery (space events)
     isSpace ? loadNASA(grid, keyword, year) : null,
   ].filter(Boolean);
@@ -1190,16 +1202,21 @@ async function loadInflation(grid, mention, year) {
 }
 
 // ─── GOODIE 16: MAP ──────────────────────────────────────────────────
-async function loadMap(grid, coords, keyword, year) {
+async function loadMap(grid, coords, keyword, year, infoboxMapUrl=null) {
   const lat=coords.lat, lon=coords.lon;
   const mapId=`map-${Date.now()}`;
   const card = goodieCard('🗺','Place on the Map',`
-    <div id="${mapId}" style="height:280px;border-radius:2px;border:1px solid var(--gold)"></div>
+    ${infoboxMapUrl ? `
+      <div style="margin-bottom:12px">
+        <img src="${infoboxMapUrl}" style="width:100%;border-radius:2px;border:1px solid var(--gold)" alt="Historical map" loading="lazy"/>
+        <div class="infobox-map-caption">Historical map · Wikipedia</div>
+      </div>` : ''}
+    <div id="${mapId}" style="height:260px;border-radius:2px;border:1px solid var(--gold)"></div>
     <div style="margin-top:8px;display:flex;gap:12px;flex-wrap:wrap">
       <a href="https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}&zoom=8" target="_blank" class="archive-link">OpenStreetMap →</a>
       <a href="https://www.davidrumsey.com/luna/servlet/view/search?q=${encodeURIComponent(keyword)}" target="_blank" class="archive-link">Historical Maps (Rumsey) →</a>
     </div>
-  `,'OpenStreetMap · Leaflet.js · David Rumsey Historical Maps');
+  `,'OpenStreetMap · Leaflet.js · David Rumsey Historical Maps · Wikipedia');
   grid.appendChild(card);
   await Promise.all([
     loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'),

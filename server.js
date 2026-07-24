@@ -100,17 +100,44 @@ async function fetchFullArticle(title) {
   if (!title) return null;
   try {
     const encoded = encodeURIComponent(title.replace(/ /g,'_'));
-    const data = await apiFetch(
-      `https://en.wikipedia.org/api/rest_v1/page/summary/${encoded}`,
-      { headers: { 'User-Agent': 'PableHistoryApp/3.0 (educational; robpoole24@gmail.com)' } }
-    );
-    // Also fetch sections for background/context
-    const sections = await apiFetch(
-      `https://en.wikipedia.org/w/api.php?action=query&titles=${encoded}&prop=extracts&exintro=false&explaintext=true&exsectionformat=plain&format=json&origin=*`
-    ).catch(() => null);
-    const pages  = sections?.query?.pages;
+    const [summary, sections, images] = await Promise.all([
+      apiFetch(
+        `https://en.wikipedia.org/api/rest_v1/page/summary/${encoded}`,
+        { headers: { 'User-Agent': 'PableHistoryApp/3.0 (educational; robpoole24@gmail.com)' } }
+      ),
+      apiFetch(
+        `https://en.wikipedia.org/w/api.php?action=query&titles=${encoded}&prop=extracts&exintro=false&explaintext=true&exsectionformat=plain&format=json&origin=*`
+      ).catch(() => null),
+      // Fetch page images to get the infobox map
+      apiFetch(
+        `https://en.wikipedia.org/w/api.php?action=query&titles=${encoded}&prop=images&imlimit=20&format=json&origin=*`
+      ).catch(() => null)
+    ]);
+
+    const pages   = sections?.query?.pages;
     const fullText = pages ? Object.values(pages)[0]?.extract || '' : '';
-    return { ...data, fullText };
+
+    // Extract infobox map — typically a .png or .jpg with 'map' or location name in filename
+    const imgPages  = images?.query?.pages;
+    const imgList   = imgPages ? Object.values(imgPages)[0]?.images || [] : [];
+    const mapImage  = imgList.find(i =>
+      /map|location|situe|battle.*plan|theater|theatre/i.test(i.title) &&
+      /\.(png|jpg|jpeg|svg)$/i.test(i.title)
+    );
+
+    let infoboxMapUrl = null;
+    if (mapImage) {
+      try {
+        const imgTitle  = encodeURIComponent(mapImage.title.replace('File:',''));
+        const imgInfo   = await apiFetch(
+          `https://en.wikipedia.org/w/api.php?action=query&titles=File:${imgTitle}&prop=imageinfo&iiprop=url&iiurlwidth=600&format=json&origin=*`
+        );
+        const imgData   = imgInfo?.query?.pages;
+        infoboxMapUrl   = imgData ? Object.values(imgData)[0]?.imageinfo?.[0]?.url : null;
+      } catch {}
+    }
+
+    return { ...summary, fullText, infoboxMapUrl };
   } catch { return null; }
 }
 
@@ -157,6 +184,7 @@ async function enrichEvents(events) {
         entities,
         peopleSummaries: peopleSummaries.filter(Boolean),
         coordinates: article?.coordinates || ev.pages?.[0]?.coordinates || null,
+        infoboxMapUrl: article?.infoboxMapUrl || null,
         curated
       };
     } catch { return ev; }
@@ -411,6 +439,27 @@ app.get('/api/ocre', async (req, res) => {
     );
     res.json(data);
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Cache clear — force rebuild of today's events (admin use)
+app.post('/api/cache/clear', async (req, res) => {
+  if (!redis) return res.status(503).json({ error: 'Redis not connected' });
+  try {
+    const today    = new Date().toISOString().split('T')[0];
+    // Clear all version keys for today
+    for (const v of ['v3','v4','v5']) {
+      await redis.del(`pable:events:${v}:${today}`).catch(()=>{});
+    }
+    // Rebuild immediately
+    const events = await buildDailyEvents();
+    const now = new Date(), midnight = new Date(now);
+    midnight.setHours(24,0,0,0);
+    const ttl = Math.floor((midnight-now)/1000);
+    await redis.setEx(`pable:events:v4:${today}`, ttl, JSON.stringify(events));
+    res.json({ ok: true, built: events.length, ttl });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Health check
