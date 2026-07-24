@@ -221,7 +221,6 @@ function openEvent(ev, pushHistory = true) {
       <div class="seal-wrapper">
         <div id="wax-seal" class="seal-img-wrap">
           <img id="seal-img" src="wax_seal.png" alt="Wax Seal" class="seal-img"/>
-          <div id="seal-sprite" class="seal-sprite" style="display:none"></div>
         </div>
         <div class="seal-label" id="seal-label">Break the Seal · Open the Goodies</div>
       </div>
@@ -239,38 +238,26 @@ function breakSeal() {
   if (sealBroken) return;
   sealBroken = true;
 
-  const wrap   = document.getElementById('wax-seal');
-  const img    = document.getElementById('seal-img');
-  const sprite = document.getElementById('seal-sprite');
-  const label  = document.getElementById('seal-label');
+  const wrap  = document.getElementById('wax-seal');
+  const img   = document.getElementById('seal-img');
+  const label = document.getElementById('seal-label');
 
   wrap.style.cursor = 'default';
   label.textContent = 'Opening…';
 
-  // Sprite animation — 11 frames across wax_seal_sprite.png
-  // Each frame is 180px wide; we step through them left to right
-  const FRAMES     = 11;
-  const FRAME_W    = 180;
-  const FRAME_MS   = 80; // ms per frame — total ~880ms
-  let   currentFrame = 0;
+  // Swap static PNG for animated GIF — browser plays it automatically from frame 1
+  img.src = 'WaxSealRemoval.gif';
 
-  img.style.display    = 'none';
-  sprite.style.display = 'block';
-
-  const tick = setInterval(() => {
-    const offset = -(currentFrame * FRAME_W);
-    sprite.style.backgroundPosition = `${offset}px 0`;
-    currentFrame++;
-    if (currentFrame >= FRAMES) {
-      clearInterval(tick);
-      // Hold last frame briefly then fade out
-      setTimeout(() => {
-        wrap.style.opacity = '0.7';
-        label.textContent  = 'Goodies Opened';
-        loadAllGoodies(selectedEvent);
-      }, 200);
-    }
-  }, FRAME_MS);
+  // Wait for GIF to finish playing, then fade out and load goodies
+  // Adjust this timeout to match your GIF's actual duration
+  setTimeout(() => {
+    wrap.style.transition  = 'opacity 0.5s ease, transform 0.5s ease';
+    wrap.style.opacity     = '0';
+    wrap.style.transform   = 'scale(0.85) translateY(-8px)';
+    label.style.transition = 'opacity 0.3s ease';
+    label.style.opacity    = '0';
+    setTimeout(() => loadAllGoodies(selectedEvent), 450);
+  }, 3000); // exactly matches GIF duration
 }
 
 // ─── LOAD ALL GOODIES ─────────────────────────────────────────────────
@@ -309,8 +296,16 @@ async function loadAllGoodies(ev) {
 
   container.innerHTML = `
     <div class="goodies-title">Pable's Goodies</div>
-    <div id="goodies-grid"></div>
+    <div class="goodies-unfold-wrapper">
+      <div class="unfold-panel unfold-panel-1" id="goodies-grid"></div>
+      <div class="unfold-crease"></div>
+      <div class="unfold-panel unfold-panel-2" id="goodies-grid-2"></div>
+      <div class="unfold-crease unfold-crease-2"></div>
+      <div class="unfold-panel unfold-panel-3" id="goodies-grid-3"></div>
+    </div>
   `;
+  // All goodies go into grid-1 by default; the panels just provide the
+  // visual unfold effect — content fills naturally as it loads
   const grid = document.getElementById('goodies-grid');
 
   // Merge curated people names into query list — these are the most precise
