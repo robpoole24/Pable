@@ -11,6 +11,12 @@ let sealBroken    = false;
 let cpiCache      = null;
 let currentView   = 'list'; // 'list' | 'event' | 'about'
 
+// ─── HTTPS enforcer — fixes mixed content on all image URLs ─────────
+function toHttps(url) {
+  if (!url) return url;
+  return url.replace(/^http:\/\//, 'https://');
+}
+
 // ─── Vocabulary sets ──────────────────────────────────────────────────
 const ARCHAIC_WORDS = new Set([
   'henceforth','whereupon','hitherto','thereof','whereby','herein',
@@ -444,7 +450,7 @@ async function loadPeopleDossiers(grid, people, year, curatedPeople=[]) {
       const html = valid.map(p => `
         <div class="person-card">
           ${p.thumbnail
-            ? `<img class="person-portrait" src="${p.thumbnail}" alt="${p.name}" onerror="this.style.display='none'"/>`
+            ? `<img class="person-portrait" src="${toHttps(p.thumbnail)}" alt="${p.name}" onerror="this.style.display='none'"/>`
             : '<div class="person-portrait-placeholder">👤</div>'}
           <div class="person-info">
             <div class="person-name">${p.name}</div>
@@ -510,7 +516,7 @@ async function loadImages(grid, keyword, year, isSpace, people=[]) {
     (siRes.value.response?.rows||[])
       .filter(r=>r.content?.descriptiveNonRepeating?.online_media?.media?.[0]?.thumbnail)
       .slice(0,3).forEach(r=>images.push({
-        url:r.content.descriptiveNonRepeating.online_media.media[0].thumbnail,
+        url:toHttps(r.content.descriptiveNonRepeating.online_media.media[0].thumbnail),
         caption:(r.title||'Smithsonian').substring(0,80), source:'Smithsonian'
       }));
   }
@@ -544,7 +550,7 @@ async function fetchWikimediaImages(keyword) {
     return Object.values(data.query?.pages||{})
       .filter(p=>p.imageinfo?.[0]?.url && !/\.(svg|gif)$/i.test(p.imageinfo[0].url) && !/flag|icon|button/i.test(p.title||''))
       .slice(0,5).map(p=>({
-        url:p.imageinfo[0].url,
+        url:toHttps(p.imageinfo[0].url),
         caption:(p.imageinfo[0].extmetadata?.ImageDescription?.value||p.title||'').replace(/<[^>]+>/g,'').substring(0,80),
         source:'Wikimedia'
       }));
@@ -618,7 +624,7 @@ async function fetchMetMuseum(keyword, year, people=[]) {
         const parts = [obj.title, obj.artistDisplayName, obj.objectDate, obj.culture].filter(Boolean);
         const caption = parts.join(' · ').substring(0, 100);
         images.push({
-          url:     obj.primaryImageSmall,
+          url:     toHttps(obj.primaryImageSmall),
           caption,
           source:  'The Met',
           metUrl:  obj.objectURL,
@@ -859,7 +865,7 @@ async function loadArchiveAudio(grid, keyword) {
       <div class="audio-item">
         <div class="audio-title">${(a.title||'Untitled').substring(0,80)}</div>
         ${a.audioUrl
-          ? `<audio controls preload="metadata" style="width:100%;margin-top:6px" crossorigin="anonymous"><source src="${a.audioUrl}" type="audio/mpeg"><source src="${a.audioUrl}"></audio>`
+          ? `<audio controls preload="metadata" style="width:100%;margin-top:6px"><source src="/api/audio/proxy?url=${encodeURIComponent(a.audioUrl)}" type="audio/mpeg"></audio>`
           : `<a href="https://archive.org/details/${a.identifier}" target="_blank" class="archive-link">Listen on archive.org →</a>`}
       </div>`).join('');
     appendGoodie(grid,'🔊','Voices & Recordings',html,'Internet Archive (archive.org)');
@@ -1110,7 +1116,7 @@ async function loadMusic(grid, year, keyword) {
             <div class="music-composer">${epoch} · ${c.birth?.substring(0,4)||'?'}–${c.death?.substring(0,4)||'present'}</div>
             ${c.audioUrl
               ? `<div class="audio-label">${(c.audioTitle||'').substring(0,60)}</div>
-                 <audio controls preload="metadata" style="width:100%;margin-top:4px" crossorigin="anonymous"><source src="${c.audioUrl}" type="audio/mpeg"><source src="${c.audioUrl}"></audio>`
+                 <audio controls preload="metadata" style="width:100%;margin-top:4px"><source src="/api/audio/proxy?url=${encodeURIComponent(c.audioUrl)}" type="audio/mpeg"></audio>`
               : c.archiveId
                 ? `<a href="https://archive.org/details/${c.archiveId}" target="_blank" class="archive-link">Listen on archive.org →</a>`
                 : `<div class="music-note">Search IMSLP.org for free scores</div>`}
@@ -1182,7 +1188,7 @@ async function loadBooks(grid, keyword, eventTitle, people=[], year=0, curatedBo
         const key=t; if(seen.has(key)) return; seen.add(key);
         books.push({ title:vol.title, author:vol.authors?.[0]||'Unknown',
           year:vol.publishedDate?.substring(0,4),
-          coverUrl:vol.imageLinks?.thumbnail||null, url:vol.infoLink||null,
+          coverUrl:toHttps(vol.imageLinks?.thumbnail)||null, url:vol.infoLink||null,
           source:'Google Books' });
       });
     } catch {}

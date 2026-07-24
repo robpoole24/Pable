@@ -254,7 +254,7 @@ async function buildDailyEvents() {
 async function ensureDailyEvents() {
   if (!redis) return;
   const today    = new Date().toISOString().split('T')[0];
-  const cacheKey = `pable:events:v4:${today}`;
+  const cacheKey = `pable:events:v5:${today}`;
   const cached   = await redis.get(cacheKey);
   if (cached) { console.log('Events cached for', today); return; }
   try {
@@ -283,7 +283,7 @@ scheduleMidnightRefresh();
 app.get('/api/events/today', async (req, res) => {
   try {
     const today    = new Date().toISOString().split('T')[0];
-    const cacheKey = `pable:events:v4:${today}`;
+    const cacheKey = `pable:events:v5:${today}`;
     if (redis) {
       const cached = await redis.get(cacheKey);
       if (cached) return res.json(JSON.parse(cached));
@@ -504,8 +504,42 @@ app.post('/api/cache/clear', async (req, res) => {
     const now = new Date(), midnight = new Date(now);
     midnight.setHours(24,0,0,0);
     const ttl = Math.floor((midnight-now)/1000);
-    await redis.setEx(`pable:events:v4:${today}`, ttl, JSON.stringify(events));
+    await redis.setEx(`pable:events:v5:${today}`, ttl, JSON.stringify(events));
     res.json({ ok: true, built: events.length, ttl });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Audio proxy — streams Internet Archive audio server-side to avoid CORS/redirect issues
+app.get('/api/audio/proxy', async (req, res) => {
+  const { url } = req.query;
+  if (!url) return res.status(400).json({ error: 'url required' });
+  
+  // Only allow archive.org URLs
+  if (!url.startsWith('https://archive.org/') && !url.startsWith('http://archive.org/')) {
+    return res.status(403).json({ error: 'Only archive.org URLs allowed' });
+  }
+  
+  try {
+    const response = await fetch(url, {
+      headers: { 'User-Agent': 'PableHistoryApp/3.0 (educational; robpoole24@gmail.com)' },
+      redirect: 'follow'
+    });
+    
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    
+    // Forward content headers
+    const contentType = response.headers.get('content-type') || 'audio/mpeg';
+    const contentLength = response.headers.get('content-length');
+    
+    res.set('Content-Type', contentType);
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Accept-Ranges', 'bytes');
+    if (contentLength) res.set('Content-Length', contentLength);
+    
+    // Stream the audio
+    response.body.pipe(res);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
