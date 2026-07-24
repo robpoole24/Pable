@@ -29,10 +29,13 @@
   --red-light:       #C0392B;
 }
 
-html { scroll-behavior: smooth; }
+html, body {
+  scroll-behavior: smooth;
+  background: #F2E8D5;  /* parchment — matches splash and logo bg exactly */
+}
 
 body {
-  background: var(--parchment);
+  background: #F2E8D5;
   color: var(--ink);
   font-family: 'Crimson Pro', Georgia, serif;
   min-height: 100vh;
@@ -61,8 +64,8 @@ body {
   margin-bottom: 6px;
 }
 .pable-header h1 {
-  font-family: 'IM Fell English', serif;
-  font-size: 42px;
+  font-family: 'USDeclaration', 'Crimson Pro', cursive;
+  font-size: 52px;
   color: var(--parchment-light);
   line-height: 1.05;
   letter-spacing: 1px;
@@ -113,7 +116,7 @@ body {
 .event-card:hover { box-shadow: 3px 3px 0 var(--brown); }
 .event-card-inner { padding: 16px 18px 14px; }
 .event-card-year {
-  font-family: 'IM Fell English', serif;
+  font-family: 'Crimson Pro', Georgia, serif;
   font-size: 28px;
   color: var(--brown);
   float: left;
@@ -122,7 +125,7 @@ body {
   line-height: 1;
 }
 .event-card-title {
-  font-family: 'IM Fell English', serif;
+  font-family: 'Crimson Pro', Georgia, serif;
   font-size: 18px;
   color: var(--ink);
   line-height: 1.3;
@@ -171,13 +174,13 @@ body {
   padding: 20px 24px 16px;
 }
 .event-expanded-year {
-  font-family: 'IM Fell English', serif;
+  font-family: 'Crimson Pro', Georgia, serif;
   font-size: 52px;
   color: var(--gold);
   line-height: 1;
 }
 .event-expanded-title {
-  font-family: 'IM Fell English', serif;
+  font-family: 'Crimson Pro', Georgia, serif;
   font-size: 24px;
   color: var(--parchment-light);
   margin-top: 2px;
@@ -224,7 +227,7 @@ body {
 
 /* ── Goodies ─────────────────────────────────────────────────────────── */
 .goodies-title {
-  font-family: 'IM Fell English', serif;
+  font-family: 'Crimson Pro', Georgia, serif;
   font-size: 22px;
   color: var(--brown);
   text-align: center;
@@ -287,16 +290,16 @@ audio { width: 100%; height: 32px; margin-top: 6px; }
 /* ── Etymology ───────────────────────────────────────────────────────── */
 .word-item { margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px dashed var(--gold); }
 .word-item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-.word-term { font-family: 'IM Fell English', serif; font-size: 20px; color: var(--brown); }
+.word-term { font-family: 'Crimson Pro', Georgia, serif; font-size: 20px; color: var(--brown); }
 .word-pos { font-family: 'Courier Prime', monospace; font-size: 10px; color: var(--ink-light); letter-spacing: 1px; margin-left: 8px; text-transform: uppercase; }
 .word-etymology { font-size: 14px; font-style: italic; color: var(--ink-light); margin-top: 4px; line-height: 1.5; }
 .word-definition { font-size: 15px; color: var(--ink); margin-top: 6px; line-height: 1.6; }
 
 /* ── Money ───────────────────────────────────────────────────────────── */
 .money-display { text-align: center; padding: 8px 0 4px; }
-.money-original { font-family: 'IM Fell English', serif; font-size: 28px; color: var(--brown); }
+.money-original { font-family: 'Crimson Pro', Georgia, serif; font-size: 28px; color: var(--brown); }
 .money-arrow { font-size: 22px; color: var(--gold); margin: 4px 0; }
-.money-modern { font-family: 'IM Fell English', serif; font-size: 32px; color: var(--ink); }
+.money-modern { font-family: 'Crimson Pro', Georgia, serif; font-size: 32px; color: var(--ink); }
 .money-note { font-family: 'Courier Prime', monospace; font-size: 11px; color: var(--ink-light); margin-top: 6px; letter-spacing: 1px; }
 .money-context { font-size: 13px; font-style: italic; color: var(--ink-light); margin-top: 8px; text-align: center; }
 
@@ -314,7 +317,7 @@ audio { width: 100%; height: 32px; margin-top: 6px; }
 .book-cover { width: 48px; flex-shrink: 0; }
 .book-cover img { width: 48px; height: 64px; object-fit: cover; border: 1px solid var(--gold); border-radius: 1px; }
 .book-cover-placeholder { width: 48px; height: 64px; background: var(--brown); border-radius: 1px; display: flex; align-items: center; justify-content: center; }
-.book-title { font-family: 'IM Fell English', serif; font-size: 15px; line-height: 1.3; }
+.book-title { font-family: 'Crimson Pro', Georgia, serif; font-size: 15px; line-height: 1.3; }
 .book-title a { color: var(--ink); text-decoration: none; }
 .book-title a:hover { text-decoration: underline; }
 .book-author { font-family: 'Courier Prime', monospace; font-size: 10px; color: var(--ink-light); letter-spacing: 1px; margin-top: 2px; }
@@ -324,7 +327,7 @@ audio { width: 100%; height: 32px; margin-top: 6px; }
 /* ── Newspapers ──────────────────────────────────────────────────────── */
 .newspaper-item { padding: 8px 0; border-bottom: 1px dashed var(--gold); }
 .newspaper-item:last-child { border-bottom: none; }
-.newspaper-title { font-family: 'IM Fell English', serif; font-size: 16px; line-height: 1.3; }
+.newspaper-title { font-family: 'Crimson Pro', Georgia, serif; font-size: 16px; line-height: 1.3; }
 .newspaper-title a { color: var(--ink); }
 .newspaper-meta { font-family: 'Courier Prime', monospace; font-size: 10px; color: var(--brown); letter-spacing: 1px; margin-top: 3px; }
 .newspaper-snippet { font-size: 13px; font-style: italic; color: var(--ink-light); margin-top: 4px; line-height: 1.4; }
@@ -393,10 +396,12 @@ audio { width: 100%; height: 32px; margin-top: 6px; }
 }
 
 #splash-tagline {
-  font-family: '18thCentury', 'Crimson Pro', serif;
+  font-family: 'Crimson Pro', Georgia, serif;
+  font-weight: 600;
+  font-style: italic;
   font-size: 18px;
   color: var(--ink-light);
-  letter-spacing: 2px;
+  letter-spacing: 1px;
   margin-top: 8px;
   text-align: center;
   animation: fadeIn 1.2s ease both;
@@ -448,9 +453,10 @@ audio { width: 100%; height: 32px; margin-top: 6px; }
   letter-spacing: 1px;
 }
 
-/* 18thCentury — section headers, event titles, goodies title */
+/* Display font for section headers and event titles */
 .font-18c {
-  font-family: '18thCentury', 'Crimson Pro', serif;
+  font-family: 'Crimson Pro', Georgia, serif;
+  font-weight: 600;
 }
 
 /* ── Responsive ──────────────────────────────────────────────────────── */
@@ -530,13 +536,13 @@ audio { width: 100%; height: 32px; margin-top: 6px; }
 
 /* Money */
 .money-mention {
-  font-family: 'IM Fell English', serif; font-size: 20px;
+  font-family: 'Crimson Pro', Georgia, serif; font-size: 20px;
   color: var(--brown); font-style: italic; margin-bottom: 4px;
 }
 .money-display { text-align: center; padding: 8px 0 4px; }
 .money-original { font-size: 14px; color: var(--ink-light); font-style: italic; }
 .money-arrow { font-size: 22px; color: var(--gold); margin: 4px 0; }
-.money-modern { font-family: '18thCentury','Crimson Pro',serif; font-size: 28px; color: var(--ink); }
+.money-modern { font-family: 'Crimson Pro', Georgia, serif; font-weight: 600; font-size: 28px; color: var(--ink); }
 .money-note { font-family: 'Courier Prime', monospace; font-size: 10px; color: var(--ink-light); margin-top: 6px; }
 .money-context { font-size: 13px; font-style: italic; color: var(--ink-light); margin-top: 8px; text-align: center; }
 
@@ -584,7 +590,7 @@ audio { width: 100%; height: 32px; margin-top: 6px; }
 
 /* ── v3 Additions ─────────────────────────────────────────────────── */
 
-/* Fix: remove 18thCentury font from all text, keep USDeclaration for wordmark only */
+/* Display font — Crimson Pro semibold throughout */
 .font-18c { font-family: 'Crimson Pro', Georgia, serif; font-weight: 600; }
 
 /* Fix: header eyebrow with About button */

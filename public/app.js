@@ -106,7 +106,6 @@ function renderApp() {
           <button class="about-btn" onclick="showAbout()">About</button>
         </div>
         <h1 class="pable-wordmark">Pable</h1>
-        <div class="pable-header-sub">History as Mr. Pable taught it — deep, demanding, and alive</div>
       </div>
       <div class="pable-date-banner">This Day in History — ${monthName} ${day}, ${year}</div>
       <div id="main-content"></div>

@@ -4,23 +4,26 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Pable — The History App Full of Goodies</title>
+  <!-- No-cache headers via meta tags -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Courier+Prime:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=3.2" />
 </head>
 <body>
 
   <!-- Splash Screen -->
   <div id="splash">
     <img src="pablemainlogo.png" alt="Pable — The History App Full of Goodies" id="splash-logo" />
-    <div id="splash-tagline">History as Mr. Pable taught it</div>
     <div id="splash-enter" onclick="enterApp()">Enter ↓</div>
   </div>
 
   <!-- Main App -->
   <div id="app" style="display:none"></div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=3.2"></script>
 </body>
 </html>
