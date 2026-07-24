@@ -17,7 +17,7 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --parchment:       #F2E8D5;
+  --parchment:       #FEF1D4;
   --parchment-light: #F8F2E6;
   --parchment-dark:  #E8DCC8;
   --ink:             #2C1A0E;
@@ -31,11 +31,11 @@
 
 html, body {
   scroll-behavior: smooth;
-  background: #EDE0BE;
+  background: #FEF1D4;
 }
 
 body {
-  background: #EDE0BE;
+  background: #FEF1D4;
   color: var(--ink);
   font-family: 'Crimson Pro', Georgia, serif;
   min-height: 100vh;
@@ -379,7 +379,7 @@ audio { width: 100%; height: 32px; margin-top: 6px; }
 
 /* ── Splash Screen ───────────────────────────────────────────────────── */
 #splash {
-  background: #EDE0BE;
+  background: #FEF1D4;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
