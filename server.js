@@ -548,33 +548,42 @@ app.post('/api/cache/clear', async (req, res) => {
 app.get('/api/audio/proxy', async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).json({ error: 'url required' });
-  
-  // Only allow archive.org URLs
   if (!url.startsWith('https://archive.org/') && !url.startsWith('http://archive.org/')) {
     return res.status(403).json({ error: 'Only archive.org URLs allowed' });
   }
-  
   try {
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'PableHistoryApp/3.0 (educational; robpoole24@gmail.com)' },
-      redirect: 'follow'
-    });
+    // Use Node's built-in https to handle redirects and stream properly
+    const https = require('https');
+    const http  = require('http');
     
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    
-    // Forward content headers
-    const contentType = response.headers.get('content-type') || 'audio/mpeg';
-    const contentLength = response.headers.get('content-length');
-    
-    res.set('Content-Type', contentType);
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Accept-Ranges', 'bytes');
-    if (contentLength) res.set('Content-Length', contentLength);
-    
-    // Stream the audio
-    response.body.pipe(res);
+    const makeRequest = (targetUrl) => {
+      const mod = targetUrl.startsWith('https') ? https : http;
+      mod.get(targetUrl, {
+        headers: { 'User-Agent': 'PableHistoryApp/3.0 (educational; robpoole24@gmail.com)' }
+      }, (audioRes) => {
+        // Follow redirects manually
+        if (audioRes.statusCode === 301 || audioRes.statusCode === 302 || audioRes.statusCode === 303) {
+          const redirectUrl = audioRes.headers.location;
+          if (redirectUrl) return makeRequest(redirectUrl);
+        }
+        if (audioRes.statusCode !== 200) {
+          return res.status(audioRes.statusCode).json({ error: `Archive returned ${audioRes.statusCode}` });
+        }
+        res.set('Content-Type', audioRes.headers['content-type'] || 'audio/mpeg');
+        res.set('Access-Control-Allow-Origin', '*');
+        res.set('Accept-Ranges', 'bytes');
+        if (audioRes.headers['content-length']) {
+          res.set('Content-Length', audioRes.headers['content-length']);
+        }
+        audioRes.pipe(res);
+        audioRes.on('error', e => { if (!res.headersSent) res.status(500).json({ error: e.message }); });
+      }).on('error', e => {
+        if (!res.headersSent) res.status(500).json({ error: e.message });
+      });
+    };
+    makeRequest(url.startsWith('http') ? url : 'https://' + url);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    if (!res.headersSent) res.status(500).json({ error: e.message });
   }
 });
 

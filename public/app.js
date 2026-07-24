@@ -1179,10 +1179,13 @@ async function loadBooks(grid, keyword, eventTitle, people=[], year=0, curatedBo
   for (const q of queries) {
     // Open Library
     try {
-      const data = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=4&fields=key,title,author_name,first_publish_year,cover_i`).then(r=>r.json());
+      const data = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=6&fields=key,title,author_name,first_publish_year,cover_i,subject`).then(r=>r.json());
       (data.docs||[]).filter(b=>{
         const t=(b.title||'').toLowerCase();
-        return q.toLowerCase().split(' ').filter(w=>w.length>3).some(w=>t.includes(w));
+        const desc = (b.subject||[]).join(' ').toLowerCase();
+        const qwords = q.toLowerCase().split(' ').filter(w=>w.length>3);
+        // Match on title OR subject tags — catches books "about" the topic
+        return qwords.some(w => t.includes(w) || desc.includes(w));
       }).slice(0,3).forEach(b=>{
         const key=b.title?.toLowerCase(); if(seen.has(key)) return; seen.add(key);
         books.push({ title:b.title, author:b.author_name?.[0]||'Unknown', year:b.first_publish_year,
@@ -1196,7 +1199,8 @@ async function loadBooks(grid, keyword, eventTitle, people=[], year=0, curatedBo
       const data = await fetch(`/api/books?q=${encodeURIComponent(q)}&maxResults=4`).then(r=>r.json());
       (data.items||[]).forEach(item=>{
         const vol=item.volumeInfo, t=(vol.title||'').toLowerCase();
-        if (!q.toLowerCase().split(' ').filter(w=>w.length>3).some(w=>t.includes(w))) return;
+        const qwords = q.toLowerCase().split(' ').filter(w=>w.length>3);
+        if (!qwords.some(w => t.includes(w) || (vol.description||'').toLowerCase().includes(w))) return;
         const key=t; if(seen.has(key)) return; seen.add(key);
         books.push({ title:vol.title, author:vol.authors?.[0]||'Unknown',
           year:vol.publishedDate?.substring(0,4),
