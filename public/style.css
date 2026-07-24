@@ -581,3 +581,217 @@ audio { width: 100%; height: 32px; margin-top: 6px; }
   color: var(--ink-light); text-align: center; padding: 24px 24px 0;
   letter-spacing: 1px; opacity: 0.55; line-height: 2;
 }
+
+/* ── v3 Additions ─────────────────────────────────────────────────── */
+
+/* Fix: remove 18thCentury font from all text, keep USDeclaration for wordmark only */
+.font-18c { font-family: 'Crimson Pro', Georgia, serif; font-weight: 600; }
+
+/* Fix: header eyebrow with About button */
+.pable-header-eyebrow {
+  display: flex; align-items: center; justify-content: center;
+  position: relative; width: 100%;
+}
+.about-btn {
+  position: absolute; right: 0;
+  font-family: 'Courier Prime', monospace; font-size: 10px;
+  letter-spacing: 2px; text-transform: uppercase;
+  color: var(--gold); background: none; border: 1px solid var(--gold);
+  padding: 3px 10px; border-radius: 1px; cursor: pointer;
+  opacity: 0.8; transition: opacity 0.15s;
+}
+.about-btn:hover { opacity: 1; }
+
+/* Fix: header sub — use Crimson Pro not 18thCentury */
+.pable-header-sub {
+  font-family: 'Crimson Pro', Georgia, serif;
+  font-style: italic; font-size: 15px;
+  color: var(--gold); margin-top: 6px; opacity: 0.9;
+}
+
+/* Fix: event card layout */
+.event-card { overflow: hidden; }
+.event-card-inner { padding: 14px 18px 12px; }
+.event-card-year {
+  font-family: 'Crimson Pro', Georgia, serif;
+  font-weight: 600; font-size: 26px;
+  color: var(--brown); line-height: 1; margin-bottom: 2px;
+}
+.event-card-title {
+  font-family: 'Crimson Pro', Georgia, serif;
+  font-weight: 600; font-size: 17px;
+  color: var(--ink); line-height: 1.3; margin-bottom: 6px;
+}
+.event-card-open-hint {
+  font-family: 'Courier Prime', monospace; font-size: 10px;
+  color: var(--gold-dark); text-align: right;
+  letter-spacing: 1px; margin-top: 10px; display: block;
+  border-top: 1px dashed var(--gold); padding-top: 8px;
+}
+
+/* People dossiers */
+.person-card {
+  display: flex; gap: 12px; padding: 10px 0;
+  border-bottom: 1px dashed var(--gold);
+}
+.person-card:last-child { border-bottom: none; }
+.person-portrait {
+  width: 72px; height: 90px; object-fit: cover;
+  border: 1px solid var(--gold); border-radius: 1px; flex-shrink: 0;
+}
+.person-portrait-placeholder {
+  width: 72px; height: 90px; background: var(--parchment-dark);
+  border: 1px solid var(--gold); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px;
+}
+.person-name {
+  font-family: 'Crimson Pro', serif; font-weight: 600; font-size: 17px;
+  color: var(--brown); margin-bottom: 4px;
+}
+.person-extract { font-size: 13px; color: var(--ink-light); line-height: 1.5; }
+
+/* Life & Society */
+.society-item { margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px dashed var(--gold); }
+.society-item:last-child { border-bottom: none; margin-bottom: 0; }
+.society-thumb { width: 100%; max-height: 140px; object-fit: cover; border: 1px solid var(--gold); margin-bottom: 8px; border-radius: 1px; }
+.society-name { font-family: 'Crimson Pro', serif; font-weight: 600; font-size: 17px; color: var(--brown); margin-bottom: 4px; }
+.society-extract { font-size: 14px; color: var(--ink-light); line-height: 1.6; margin-bottom: 6px; }
+.goodie-context { font-style: italic; font-size: 14px; color: var(--ink-light); margin-bottom: 12px; line-height: 1.5; }
+
+/* ── About Section ───────────────────────────────────────────────── */
+.about-container { padding: 0 0 40px; }
+.about-tabs {
+  display: flex; border-bottom: 2px solid var(--gold);
+  margin: 16px 16px 0;
+}
+.about-tab {
+  font-family: 'Courier Prime', monospace; font-size: 11px;
+  letter-spacing: 2px; text-transform: uppercase;
+  background: none; border: none; padding: 10px 18px;
+  color: var(--ink-light); cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -2px;
+  transition: color 0.15s;
+}
+.about-tab.active { color: var(--brown); border-bottom-color: var(--brown); }
+.about-panel { padding: 20px 20px 0; }
+
+/* Tribute */
+.pable-tribute { text-align: center; padding: 20px 0 16px; }
+.tribute-photo-wrap { margin-bottom: 14px; }
+.tribute-photo {
+  width: 160px; height: 200px; object-fit: cover;
+  border: 3px solid var(--gold); border-radius: 2px;
+  filter: sepia(20%);
+}
+.tribute-photo-placeholder {
+  width: 160px; height: 200px; background: var(--parchment-dark);
+  border: 3px solid var(--gold); border-radius: 2px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: 'Crimson Pro', serif; font-size: 28px; color: var(--ink-light);
+}
+.tribute-name {
+  font-family: 'Crimson Pro', serif; font-weight: 600; font-size: 22px;
+  color: var(--ink); margin-bottom: 4px;
+}
+.tribute-dates {
+  font-family: 'Courier Prime', monospace; font-size: 12px;
+  letter-spacing: 2px; color: var(--inkLight); margin-bottom: 8px;
+}
+.tribute-titles {
+  font-family: 'Crimson Pro', serif; font-style: italic;
+  font-size: 14px; color: var(--ink-light); line-height: 1.7;
+}
+.tribute-bio {
+  border-top: 1px solid var(--gold); border-bottom: 1px solid var(--gold);
+  padding: 18px 0; margin: 16px 0;
+}
+.tribute-bio p { font-size: 16px; line-height: 1.75; margin-bottom: 12px; color: var(--ink); }
+.tribute-bio p:last-child { margin-bottom: 0; }
+.tribute-obit-link {
+  display: inline-block; font-family: 'Courier Prime', monospace;
+  font-size: 11px; letter-spacing: 1px; color: var(--brown);
+  text-decoration: underline; margin-bottom: 24px;
+}
+
+/* Paul Harvey */
+.harvey-section {
+  background: var(--ink); border-radius: 2px; padding: 20px;
+  margin-top: 8px;
+}
+.harvey-header { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 14px; }
+.harvey-icon { font-size: 32px; flex-shrink: 0; }
+.harvey-title {
+  font-family: 'Crimson Pro', serif; font-weight: 600; font-size: 20px;
+  color: var(--gold); line-height: 1.2;
+}
+.harvey-sub {
+  font-family: 'Courier Prime', monospace; font-size: 10px;
+  letter-spacing: 2px; color: var(--parchment-dark);
+  margin-top: 4px; text-transform: uppercase;
+}
+.harvey-bio p {
+  font-size: 15px; color: var(--parchment-light); line-height: 1.7;
+  margin-bottom: 10px;
+}
+.harvey-bio p:last-child { margin-bottom: 16px; }
+.harvey-bio em { color: var(--gold); font-style: italic; }
+.harvey-playlist-btn {
+  display: block; text-align: center;
+  font-family: 'Courier Prime', monospace; font-size: 12px;
+  letter-spacing: 2px; text-transform: uppercase;
+  background: var(--brown); color: var(--parchment-light);
+  padding: 12px 20px; border-radius: 1px; text-decoration: none;
+  transition: background 0.15s; margin-top: 4px;
+}
+.harvey-playlist-btn:hover { background: var(--gold-dark); }
+
+/* App About */
+.app-about-section { padding-bottom: 20px; }
+.app-about-logo { text-align: center; margin: 10px 0 16px; }
+.app-about-title {
+  font-family: 'Crimson Pro', serif; font-size: 20px;
+  color: var(--ink); margin-bottom: 10px; font-weight: 600;
+}
+.app-about-subhead {
+  font-family: 'Crimson Pro', serif; font-size: 16px; font-weight: 600;
+  color: var(--brown); margin: 16px 0 6px; border-bottom: 1px solid var(--gold);
+  padding-bottom: 4px;
+}
+.app-about-body {
+  font-size: 15px; color: var(--ink-light); line-height: 1.7; margin-bottom: 4px;
+}
+
+/* ── Met Museum Artifacts ─────────────────────────────────────────── */
+.met-artifact {
+  display: flex; gap: 12px; padding: 12px 0;
+  border-bottom: 1px dashed var(--gold);
+}
+.met-artifact:last-child { border-bottom: none; }
+.met-img-link { flex-shrink: 0; }
+.met-img {
+  width: 90px; height: 110px; object-fit: cover;
+  border: 1px solid var(--gold); border-radius: 1px;
+  display: block; transition: opacity 0.15s;
+}
+.met-img:hover { opacity: 0.85; }
+.met-info { flex: 1; min-width: 0; }
+.met-title {
+  font-family: 'Crimson Pro', serif; font-size: 15px;
+  font-weight: 600; line-height: 1.3; margin-bottom: 3px;
+}
+.met-title a { color: var(--ink); text-decoration: none; }
+.met-title a:hover { text-decoration: underline; color: var(--brown); }
+.met-artist {
+  font-family: 'Crimson Pro', serif; font-style: italic;
+  font-size: 13px; color: var(--brown); margin-bottom: 3px;
+}
+.met-meta {
+  font-family: 'Courier Prime', monospace; font-size: 10px;
+  color: var(--ink-light); letter-spacing: 0.5px; line-height: 1.5;
+  margin-bottom: 2px;
+}
+.met-dims {
+  font-family: 'Courier Prime', monospace; font-size: 9px;
+  color: var(--ink-light); opacity: 0.6;
+}

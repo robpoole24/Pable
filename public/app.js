@@ -1,73 +1,82 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   PABLE v2 — Frontend
-   
-   20 daily events, weighted by historical significance & era diversity.
-   Each event has up to 20 Goodies, shown only when content is found.
-   Keyed APIs → /api/* proxy. Keyless → direct browser calls.
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════
+   PABLE v3 — app.js
+   Full rabbit-hole goodies: people, places, coins, full articles,
+   layered YouTube, primary sources, About section w/ Mr. Pable tribute
+   ═══════════════════════════════════════════════════════════════════════ */
 
-// ─── State ────────────────────────────────────────────────────────────────
+// ─── State ────────────────────────────────────────────────────────────
 let todayEvents   = [];
 let selectedEvent = null;
 let sealBroken    = false;
 let cpiCache      = null;
+let currentView   = 'list'; // 'list' | 'event' | 'about'
 
-// ─── Constants ────────────────────────────────────────────────────────────
+// ─── Vocabulary sets ──────────────────────────────────────────────────
 const ARCHAIC_WORDS = new Set([
   'henceforth','whereupon','hitherto','thereof','whereby','herein',
-  'forthwith','thenceforth','henceforward','whence','thither','hither',
-  'methinks','perchance','forsooth','prithee','haply','mayhaps',
-  'sennight','fortnight','league','furlong','farthing','groat',
-  'musket','arquebus','trebuchet','ballista','catapult','phalanx',
-  'centurion','praetor','consul','tribune','legate','prefect',
-  'serf','vassal','liege','fealty','suzerainty','fiefdom',
-  'redcoat','minuteman','dragoon','hussar','cuirassier','pikeman',
-  'galleon','brigantine','frigate','carrack','privateer','corsair',
-  'apotheosis','hegemony','satrap','vizier','caliph','emir',
-  'inquisition','heresy','crusade','indulgence','schism','papal',
-  'plague','pestilence','pox','miasma','humour','phlebotomy',
-  'alchemy','astrolabe','armillary','quadrant','sextant',
-  'parchment','vellum','illuminated','codex','papyrus','manuscript'
+  'forthwith','thenceforth','whence','thither','hither','perchance',
+  'forsooth','sennight','fortnight','farthing','groat','musket',
+  'arquebus','trebuchet','ballista','catapult','phalanx','centurion',
+  'praetor','consul','tribune','legate','prefect','serf','vassal',
+  'liege','fealty','suzerainty','fiefdom','redcoat','minuteman',
+  'dragoon','hussar','cuirassier','pikeman','galleon','brigantine',
+  'frigate','carrack','privateer','corsair','apotheosis','hegemony',
+  'satrap','vizier','caliph','emir','inquisition','heresy','crusade',
+  'indulgence','schism','papal','plague','pestilence','miasma',
+  'alchemy','astrolabe','quadrant','sextant','parchment','vellum',
+  'illuminated','codex','papyrus','manuscript','siege','rampart',
+  'bastion','castle','manor','guild','charter','parliament','jury',
+  'verdict','liberty','republic','tyranny','empire','senate',
+  'dictator','patrician','plebeian','gladiator','catapult','trebuchet',
+  'longbow','crossbow','hauberk','destrier','palfrey','joust','melee'
 ]);
 
 const STOP_WORDS = new Set([
   'about','after','again','against','along','already','also','although',
   'always','among','another','around','became','because','been','before',
-  'being','between','both','comes','could','during','each','either',
-  'enough','every','first','following','found','from','give','given',
-  'goes','going','having','however','include','including','into',
-  'known','large','later','least','less','like','made','make','many',
-  'more','most','much','must','near','never','next','none','north',
-  'noted','often','once','only','onto','other','over','part','place',
-  'same','several','since','small','some','south','still','such',
-  'than','that','their','them','then','there','these','they','this',
-  'those','through','time','under','until','upon','used','very',
-  'want','were','what','when','where','while','which','will','with',
-  'within','would','year','years','your'
+  'being','between','both','could','during','every','first','following',
+  'found','give','given','having','however','include','into','known',
+  'later','least','less','made','make','many','more','most','much',
+  'must','near','never','next','none','noted','often','once','only',
+  'onto','other','over','part','place','same','several','since','small',
+  'some','still','such','than','that','their','them','then','there',
+  'these','they','this','those','through','time','under','until','upon',
+  'used','very','were','what','when','where','while','which','will',
+  'with','within','would','year','years','your','have','from','were'
 ]);
 
-// Pre-1800 origin words worth noting etymologically
-const ETYMOLOGY_WORTHY = new Set([
-  'assassin','algebra','alcohol','admiral','alchemy','almanac',
-  'arsenal','artichoke','assassinate','average','checkmate',
-  'cipher','coffee','cotton','crimson','elixir','gauze',
-  'hazard','magazine','monsoon','muslin','orange','safari',
-  'sequin','sherbet','sofa','sugar','syrup','tariff','zenith',
-  'berserk','blunder','bylaw','husband','law','outlaw','ransack',
-  'skull','slaughter','thrall','window','anger','cake','die',
-  'egg','flat','get','give','ill','knife','leg','loan',
-  'melee','skirmish','platoon','battalion','colonel','sergeant',
-  'lieutenant','captain','general','admiral','navy','cavalry',
-  'infantry','militia','garrison','siege','rampart','bastion',
-  'castle','manor','guild','charter','parliament','jury','verdict',
-  'liberty','republic','democracy','tyranny','empire','senate',
-  'consul','dictator','tribune','patrician','plebeian','gladiator'
-]);
-
-// ─── Init ─────────────────────────────────────────────────────────────────
+// ─── Init ─────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   loadTodayEvents();
+
+  // Browser back/forward button support
+  window.addEventListener('popstate', e => {
+    const state = e.state || { view: 'list' };
+    if (state.view === 'list') {
+      currentView = 'list'; selectedEvent = null; sealBroken = false;
+      renderEventList();
+    } else if (state.view === 'event' && state.eventIndex != null) {
+      const ev = todayEvents[state.eventIndex];
+      if (ev) { currentView = 'event'; openEvent(ev, false); }
+      else { currentView = 'list'; renderEventList(); }
+    } else if (state.view === 'about') {
+      currentView = 'about'; showAbout(false);
+    } else {
+      currentView = 'list'; renderEventList();
+    }
+  });
 });
+
+// Push a new history state without triggering popstate
+function pushState(view, extra = {}) {
+  const state = { view, ...extra };
+  const titles = {
+    list:  'Pable — This Day in History',
+    event: 'Pable — Event',
+    about: 'Pable — About'
+  };
+  history.pushState(state, titles[view] || 'Pable', window.location.pathname);
+}
 
 function enterApp() {
   const splash = document.getElementById('splash');
@@ -76,11 +85,13 @@ function enterApp() {
   setTimeout(() => {
     splash.style.display = 'none';
     appEl.style.display  = 'block';
+    // Replace current history entry so back from list goes to splash, not off-app
+    history.replaceState({ view: 'list' }, 'Pable', window.location.pathname);
     renderApp();
   }, 500);
 }
 
-// ─── RENDER SHELL ─────────────────────────────────────────────────────────
+// ─── SHELL ────────────────────────────────────────────────────────────
 function renderApp() {
   const today     = new Date();
   const monthName = today.toLocaleString('en-US', { month: 'long' });
@@ -90,7 +101,10 @@ function renderApp() {
   document.getElementById('app').innerHTML = `
     <div class="pable-root">
       <div class="pable-header">
-        <div class="pable-header-eyebrow">A Living History</div>
+        <div class="pable-header-eyebrow">
+          <span>A Living History</span>
+          <button class="about-btn" onclick="showAbout()">About</button>
+        </div>
         <h1 class="pable-wordmark">Pable</h1>
         <div class="pable-header-sub">History as Mr. Pable taught it — deep, demanding, and alive</div>
       </div>
@@ -101,45 +115,39 @@ function renderApp() {
   renderEventList();
 }
 
-// ─── LOAD EVENTS ──────────────────────────────────────────────────────────
+// ─── LOAD EVENTS ──────────────────────────────────────────────────────
 async function loadTodayEvents() {
   try {
     const res = await fetch('/api/events/today');
     todayEvents = await res.json();
     if (document.getElementById('main-content')) renderEventList();
-  } catch (e) {
-    console.error('Failed to load events:', e);
-  }
+  } catch (e) { console.error('Events load failed:', e); }
 }
 
-// ─── EVENT LIST ───────────────────────────────────────────────────────────
+// ─── EVENT LIST ───────────────────────────────────────────────────────
 function renderEventList() {
   const content = document.getElementById('main-content');
   if (!content) return;
-
   if (!todayEvents.length) {
     content.innerHTML = `<div class="loading-ink" style="padding:40px">Consulting the archives…</div>`;
     return;
   }
-
   content.innerHTML = `
     <div class="section-label">20 Events · Weighted by Historical Significance</div>
     ${todayEvents.map((ev, i) => eventCardHTML(ev, i)).join('')}
     <div class="source-footer">
-      Events · Wikipedia On This Day API<br>
-      Images · Wikimedia Commons · DPLA · Smithsonian · Europeana · NASA<br>
-      Video · YouTube Data API · Internet Archive<br>
-      Newspapers · Chronicling America (Library of Congress, 1770–1963)<br>
-      Etymology & Thesaurus · Merriam-Webster<br>
-      Books · Open Library · Google Books · Project Gutenberg<br>
+      Events · Wikipedia On This Day<br>
+      Images · Wikimedia · DPLA · Smithsonian · Europeana · NASA<br>
+      Video · YouTube Data API v3 · Internet Archive<br>
+      Newspapers · Chronicling America (LOC, 1770–1963)<br>
+      Etymology · Merriam-Webster · Books · Open Library · Google Books · Gutenberg<br>
       Music · Open Opus · MusicBrainz · Internet Archive Audio<br>
-      Inflation · FRED CPIAUCSL Series (St. Louis Fed)<br>
-      Maps · OpenStreetMap · Leaflet · David Rumsey Historical Maps
+      Coins · Numista · OCRE (Roman) · Wikimedia Numismatic<br>
+      Inflation · FRED CPIAUCSL · Maps · OpenStreetMap · Leaflet
     </div>
   `;
-
   document.querySelectorAll('.event-card').forEach((card, i) => {
-    card.addEventListener('click', () => openEvent(todayEvents[i]));
+    card.addEventListener('click', () => openEvent(todayEvents[i], true));
   });
 }
 
@@ -150,7 +158,7 @@ function eraLabel(year) {
   if (y < 1400)  return 'Medieval';
   if (y < 1600)  return 'Renaissance';
   if (y < 1776)  return 'Early Modern';
-  if (y < 1900)  return 'Modern';
+  if (y < 1900)  return 'Modern Era';
   if (y < 1950)  return 'Early 20th C.';
   if (y < 2000)  return 'Late 20th C.';
   return 'Contemporary';
@@ -158,78 +166,73 @@ function eraLabel(year) {
 
 function eventCardHTML(ev, i) {
   const year    = ev.year || '?';
-  const title   = ev.text?.replace(/\[\[.*?\]\]/g, '') || 'Historical Event';
-  const extract = ev.pages?.[0]?.extract || '';
+  const title   = (ev.text || 'Historical Event').replace(/\[\[.*?\]\]/g,'');
+  const extract = ev.fullSummary || ev.pages?.[0]?.extract || '';
   const thumb   = ev.pages?.[0]?.thumbnail?.source || '';
-  const era     = eraLabel(year);
-
   return `
     <div class="event-card" data-index="${i}">
+      ${thumb ? `<img class="event-card-thumb" src="${thumb}" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
       <div class="event-card-inner">
-        ${thumb ? `<img class="event-card-thumb" src="${thumb}" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
-        <div class="event-card-year font-18c">${year}</div>
-        <div class="event-card-era">${era}</div>
-        <div class="event-card-title font-18c">${title.substring(0, 120)}</div>
-        <div class="event-card-teaser">${extract.substring(0, 180)}${extract.length > 180 ? '…' : ''}</div>
-        <div class="event-card-open-hint">Open the Goodies ↓</div>
+        <div class="event-card-era">${eraLabel(year)}</div>
+        <div class="event-card-year">${year}</div>
+        <div class="event-card-title">${title.substring(0,120)}</div>
+        <div class="event-card-teaser">${extract.substring(0,200)}${extract.length>200?'…':''}</div>
+        <div class="event-card-open-hint">Explore this event ↓</div>
       </div>
     </div>
   `;
 }
 
-// ─── OPEN EVENT ───────────────────────────────────────────────────────────
-function openEvent(ev) {
+// ─── OPEN EVENT ───────────────────────────────────────────────────────
+function openEvent(ev, pushHistory = true) {
   selectedEvent = ev;
   sealBroken    = false;
+  currentView   = 'event';
+  // Push history state so browser back works
+  if (pushHistory) {
+    const idx = todayEvents.indexOf(ev);
+    pushState('event', { eventIndex: idx });
+  }
 
-  const year    = ev.year || '?';
-  const title   = ev.text?.replace(/\[\[.*?\]\]/g, '') || 'Historical Event';
-  const extract = ev.pages?.[0]?.extract || '';
-  const wikiUrl = ev.pages?.[0]?.content_urls?.desktop?.page || '';
-  const popCult = ev.pages?.[0]?.extract_html || '';
+  const year     = ev.year || '?';
+  const title    = (ev.text || '').replace(/\[\[.*?\]\]/g,'');
+  const fullText = ev.fullText || ev.fullSummary || ev.pages?.[0]?.extract || '';
+  const wikiUrl  = ev.pages?.[0]?.content_urls?.desktop?.page || '';
 
-  // Find "In popular culture" in wikitext if extract is long enough
-  const sections = extract.split(/\n\n+/);
-  const leadText = sections.slice(0, 3).join('\n\n');
+  // Split full article into paragraphs, take up to 6
+  const paragraphs = fullText.split(/\n+/).filter(p=>p.trim().length>40).slice(0,6);
 
   document.getElementById('main-content').innerHTML = `
     <div class="event-expanded">
       <div class="event-expanded-header">
         <div class="event-expanded-era">${eraLabel(year)}</div>
-        <div class="event-expanded-year font-18c">${year}</div>
-        <div class="event-expanded-title font-18c">${title}</div>
+        <div class="event-expanded-year">${year}</div>
+        <div class="event-expanded-title">${title}</div>
       </div>
-
       <button class="back-btn" id="back-btn">← All Events</button>
-
       <div class="event-summary">
-        <p>${leadText.replace(/\n/g, '</p><p>')}</p>
+        ${paragraphs.map(p=>`<p>${p}</p>`).join('')}
         ${wikiUrl ? `<a class="wiki-link" href="${wikiUrl}" target="_blank">Full Wikipedia article →</a>` : ''}
       </div>
-
       <div class="seal-wrapper">
         <svg id="wax-seal" width="90" height="90" viewBox="0 0 90 90" class="seal-svg">
           <circle cx="45" cy="45" r="42" fill="#8B1A1A"/>
           <circle cx="45" cy="45" r="37" fill="none" stroke="#C0392B" stroke-width="1.5"/>
           ${Array.from({length:12},(_,i)=>{
-            const r=i*30*Math.PI/180,x1=45+42*Math.cos(r),y1=45+42*Math.sin(r),
-                  x2=45+35*Math.cos(r+.26),y2=45+35*Math.sin(r+.26);
-            return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#C0392B" stroke-width="1" opacity="0.4"/>`;
+            const r=i*30*Math.PI/180;
+            return `<line x1="${(45+42*Math.cos(r)).toFixed(1)}" y1="${(45+42*Math.sin(r)).toFixed(1)}" x2="${(45+35*Math.cos(r+.26)).toFixed(1)}" y2="${(45+35*Math.sin(r+.26)).toFixed(1)}" stroke="#C0392B" stroke-width="1" opacity="0.4"/>`;
           }).join('')}
-          <text x="45" y="55" text-anchor="middle" font-family="'USDeclaration',cursive" font-size="34" fill="#F8F2E6">P</text>
+          <text x="45" y="55" text-anchor="middle" font-family="'USDeclaration',cursive,serif" font-size="34" fill="#F8F2E6">P</text>
         </svg>
-        <div class="seal-label" id="seal-label">Break the Seal — Open the Goodies</div>
+        <div class="seal-label" id="seal-label">Break the Seal · Open the Goodies</div>
       </div>
-
       <div id="goodies-container"></div>
     </div>
   `;
 
   document.getElementById('back-btn').addEventListener('click', () => {
-    selectedEvent = null; sealBroken = false;
-    renderEventList();
+    history.back(); // triggers popstate → renders event list
   });
-
   document.getElementById('wax-seal').addEventListener('click', breakSeal);
 }
 
@@ -250,165 +253,203 @@ function breakSeal() {
   loadAllGoodies(selectedEvent);
 }
 
-// ─── LOAD ALL GOODIES ─────────────────────────────────────────────────────
+// ─── LOAD ALL GOODIES ─────────────────────────────────────────────────
 async function loadAllGoodies(ev) {
-  const container  = document.getElementById('goodies-container');
-  const year       = parseInt(ev.year) || new Date().getFullYear();
-  const title      = ev.text?.replace(/\[\[.*?\]\]/g, '') || '';
-  const extract    = ev.pages?.[0]?.extract || '';
-  const pageTitle  = ev.pages?.[0]?.title || '';
-  const coords     = ev.pages?.[0]?.coordinates;
-  const isSpace    = /nasa|apollo|space|astronaut|rocket|moon|mars|orbit|satellite|shuttle|gemini|mercury mission|iss|hubble/i.test(title + extract);
-  const isAncient  = year < 1400;
+  const container = document.getElementById('goodies-container');
+  const year      = parseInt(ev.year) || new Date().getFullYear();
+  const title     = (ev.text||'').replace(/\[\[.*?\]\]/g,'');
+  const fullText  = ev.fullText || ev.fullSummary || ev.pages?.[0]?.extract || '';
+  const pageTitle = ev.pages?.[0]?.title || '';
+  const coords    = ev.coordinates || ev.pages?.[0]?.coordinates;
+  const people    = ev.peopleSummaries || [];
+  const entities  = ev.entities || { people: [] };
+
+  const keyword     = pageTitle || title.split(' ').slice(0,5).join(' ');
+  const isSpace     = /nasa|apollo|space|astronaut|rocket|moon|mars|orbit|satellite|shuttle|gemini|iss|hubble/i.test(title+fullText);
+  const isRoman     = /roman|caesar|augustus|empire|legion|senate|consul|gladiator|colosseum|carthage/i.test(title+fullText);
+  const isMedieval  = year >= 500 && year < 1500;
   const hasNewspaper = year >= 1770 && year <= 1963;
   const hasRecording = year >= 1877;
   const hasNewsVideo = year >= 1950;
-  const currencyMention = extractCurrencyMention(extract);
+  const currencyMention = extractCurrencyMention(fullText);
+  const archaicTerms    = extractArchaicTerms(title+' '+fullText);
 
-  // Extract archaic terms from event text
-  const archaicTerms = extractArchaicTerms(title + ' ' + extract);
+  // Key figure names from the event title (first 2-3 proper nouns)
+  const titlePeople = entities.people?.slice(0,3) || [];
+  // Build fallback YouTube queries
+  const fallbackQuery1 = titlePeople[0] || keyword.split(' ').slice(0,3).join(' ');
+  const fallbackQuery2 = `${eraLabel(year)} history ${keyword.split(' ')[0]}`;
 
   container.innerHTML = `
-    <div class="goodies-title font-18c">Pable's Goodies</div>
-    <div class="goodies-grid" id="goodies-grid"></div>
+    <div class="goodies-title">Pable's Goodies</div>
+    <div id="goodies-grid"></div>
   `;
-
-  // All goodies load independently and append themselves
   const grid = document.getElementById('goodies-grid');
-  const keyword = pageTitle || title.split(' ').slice(0,5).join(' ');
 
-  // Fire all in parallel — each renders when ready
+  // Fire all in parallel — each appends itself when ready
   const loaders = [
-    loadImages(grid, keyword, year, isSpace),
-    loadYouTubeDocs(grid, keyword, year),
-    hasNewsVideo  ? loadYouTubeNews(grid, keyword, year)        : null,
+    // 1. Key figures dossiers (people cards)
+    people.length ? loadPeopleDossiers(grid, people, year) : null,
+    // 2. Images (includes Met Museum)
+    loadImages(grid, keyword, year, isSpace, titlePeople),
+    // 2b. Met Museum dedicated goodie — arms & armor, coins, manuscripts, artifacts
+    loadMetArtifacts(grid, keyword, year, titlePeople),
+    // 3. Coins (if ancient/medieval ruler involved)
+    (isRoman || isMedieval) ? loadCoins(grid, keyword, titlePeople, isRoman) : null,
+    // 4. YouTube documentaries (layered queries)
+    loadYouTubeDocs(grid, keyword, fallbackQuery1, fallbackQuery2),
+    // 5. YouTube news (post-1950)
+    hasNewsVideo ? loadYouTubeNews(grid, keyword, fallbackQuery1) : null,
+    // 6. Internet Archive video
     loadArchiveVideo(grid, keyword),
-    hasRecording  ? loadArchiveAudio(grid, keyword)             : null,
-    hasNewspaper  ? loadNewspapers(grid, keyword, year)         : null,
-    isAncient     ? loadPrimarySources(grid, keyword, year)     : null,
-    archaicTerms.length ? loadEtymology(grid, archaicTerms)    : null,
+    // 7. Audio (post-1877)
+    hasRecording ? loadArchiveAudio(grid, keyword) : null,
+    // 8. Historic newspapers (1770–1963)
+    hasNewspaper ? loadNewspapers(grid, keyword, year) : null,
+    // 9. Primary sources / chronicles (pre-1600)
+    year < 1600 ? loadPrimarySources(grid, keyword, year, titlePeople) : null,
+    // 10. Etymology (archaic terms only)
+    archaicTerms.length ? loadEtymology(grid, archaicTerms) : null,
+    // 11. Thesaurus
     archaicTerms.length ? loadThesaurus(grid, archaicTerms[0]) : null,
+    // 12. Life & Society context
+    loadLifeAndSociety(grid, keyword, year, fullText),
+    // 13. Music
     loadMusic(grid, year, keyword),
-    loadBooks(grid, keyword, title),
-    currencyMention ? loadInflation(grid, currencyMention, year, extract) : null,
+    // 14. Books
+    loadBooks(grid, keyword, title, titlePeople, year),
+    // 15. Inflation (only if currency mentioned)
+    currencyMention ? loadInflation(grid, currencyMention, year) : null,
+    // 16. Map
     coords ? loadMap(grid, coords, keyword, year) : null,
+    // 17. NASA imagery (space events)
     isSpace ? loadNASA(grid, keyword, year) : null,
   ].filter(Boolean);
 
   await Promise.allSettled(loaders);
 
-  // If nothing rendered, show a message
   if (!grid.children.length) {
-    grid.innerHTML = `<div class="empty-state" style="padding:20px">No additional resources found for this event.</div>`;
+    grid.innerHTML = `<div class="empty-state" style="padding:20px 24px">No additional resources found. Try the Wikipedia article linked above.</div>`;
   }
 }
 
-// ─── GOODIE HELPERS ───────────────────────────────────────────────────────
-function goodieCard(icon, title, bodyHTML, sourceNote = '') {
+// ─── HELPERS ──────────────────────────────────────────────────────────
+function goodieCard(icon, title, bodyHTML, sourceNote='') {
   const div = document.createElement('div');
   div.className = 'goodie-section';
   div.innerHTML = `
-    <div class="goodie-section-header">
-      <span class="goodie-icon">${icon}</span>${title}
-    </div>
+    <div class="goodie-section-header"><span class="goodie-icon">${icon}</span>${title}</div>
     <div class="goodie-body">
       ${bodyHTML}
-      ${sourceNote ? `<div class="goodie-source">${sourceNote}</div>` : ''}
-    </div>
-  `;
+      ${sourceNote?`<div class="goodie-source">${sourceNote}</div>`:''}
+    </div>`;
   return div;
 }
-
-function appendGoodie(grid, icon, title, bodyHTML, sourceNote = '') {
-  grid.appendChild(goodieCard(icon, title, bodyHTML, sourceNote));
+function appendGoodie(grid, icon, title, html, source='') {
+  grid.appendChild(goodieCard(icon, title, html, source));
 }
-
 function extractCurrencyMention(text) {
-  const patterns = [
-    /\$[\d,]+(?:\.\d+)?(?:\s?(?:million|billion|trillion))?/i,
-    /£[\d,]+(?:\.\d+)?(?:\s?(?:million|billion|trillion))?/i,
-    /[\d,]+(?:\.\d+)?\s(?:million|billion)?\s?(?:dollars?|pounds?|francs?|ducats?|shillings?)/i,
-  ];
-  for (const p of patterns) {
-    const m = text.match(p);
-    if (m) return m[0];
-  }
+  const pats = [/\$[\d,]+(?:\.\d+)?(?:\s?(?:million|billion|trillion))?/i,
+    /£[\d,]+(?:\.\d+)?(?:\s?(?:million|billion))?/i,
+    /[\d,]+\s(?:million|billion)?\s?(?:dollars?|pounds?|francs?|ducats?|shillings?|denarii|talents?)/i];
+  for (const p of pats) { const m=text.match(p); if(m) return m[0]; }
   return null;
 }
-
 function extractArchaicTerms(text) {
   const words = text.toLowerCase().replace(/[^a-z\s]/g,'').split(/\s+/);
   const found = [];
   for (const w of words) {
-    if ((ARCHAIC_WORDS.has(w) || ETYMOLOGY_WORTHY.has(w)) && !found.includes(w)) {
-      found.push(w);
-      if (found.length >= 4) break;
-    }
+    if (ARCHAIC_WORDS.has(w) && !found.includes(w)) { found.push(w); if(found.length>=4) break; }
   }
   return found;
 }
-
 function musicEpoch(year) {
-  if (year < 1000)  return 'Medieval';
   if (year < 1400)  return 'Medieval';
   if (year < 1600)  return 'Renaissance';
   if (year < 1750)  return 'Baroque';
   if (year < 1820)  return 'Classical';
   if (year < 1910)  return 'Romantic';
-  return null; // Use MusicBrainz/Archive for 20th century+
+  return null;
+}
+function loadScript(src) {
+  return new Promise(r => {
+    if (document.querySelector(`script[src="${src}"]`)) return r();
+    const s = document.createElement('script'); s.src=src; s.onload=r;
+    document.head.appendChild(s);
+  });
+}
+function loadCSS(href) {
+  return new Promise(r => {
+    if (document.querySelector(`link[href="${href}"]`)) return r();
+    const l = document.createElement('link'); l.rel='stylesheet'; l.href=href; l.onload=r;
+    document.head.appendChild(l);
+  });
 }
 
-// ─── GOODIE: IMAGES ───────────────────────────────────────────────────────
-async function loadImages(grid, keyword, year, isSpace) {
-  const images = [];
+// ─── GOODIE 1: KEY FIGURES ────────────────────────────────────────────
+async function loadPeopleDossiers(grid, people, year) {
+  if (!people.length) return;
+  const html = people.map(p => `
+    <div class="person-card">
+      ${p.thumbnail ? `<img class="person-portrait" src="${p.thumbnail}" alt="${p.name}" onerror="this.style.display='none'"/>` : '<div class="person-portrait-placeholder">👤</div>'}
+      <div class="person-info">
+        <div class="person-name">${p.name}</div>
+        <div class="person-extract">${p.extract || ''}</div>
+        ${p.url ? `<a href="${p.url}" target="_blank" class="archive-link">Wikipedia →</a>` : ''}
+      </div>
+    </div>`).join('');
+  appendGoodie(grid,'👑','Key Figures',html,'Wikipedia');
+}
 
-  const [wikiImgs, dplaImgs, siImgs, euroImgs] = await Promise.allSettled([
-    fetchWikimediaImages(keyword),
+// ─── GOODIE 2: IMAGES ─────────────────────────────────────────────────
+async function loadImages(grid, keyword, year, isSpace, people=[]) {
+  const images = [];
+  const queries = [keyword, ...people.slice(0,2)];
+
+  const [wikiRes, dplaRes, siRes, euroRes] = await Promise.allSettled([
+    Promise.all(queries.map(q => fetchWikimediaImages(q))),
     fetch(`/api/dpla?q=${encodeURIComponent(keyword)}&page_size=4`).then(r=>r.json()).catch(()=>({docs:[]})),
     fetch(`/api/smithsonian?q=${encodeURIComponent(keyword)}&rows=4`).then(r=>r.json()).catch(()=>({response:{rows:[]}})),
-    year < 1900 ? fetch(`/api/europeana?q=${encodeURIComponent(keyword)}&rows=4`).then(r=>r.json()).catch(()=>({items:[]})) : Promise.resolve({items:[]}),
+    year < 1900 ? fetch(`/api/europeana?q=${encodeURIComponent(keyword)}&rows=5`).then(r=>r.json()).catch(()=>({items:[]})) : Promise.resolve({items:[]}),
   ]);
 
-  if (wikiImgs.status==='fulfilled') images.push(...wikiImgs.value);
-
-  if (dplaImgs.status==='fulfilled') {
-    (dplaImgs.value.docs||[]).filter(d=>d.object).slice(0,3).forEach(d=>images.push({
-      url: d.object,
-      caption: (d.sourceResource?.title?.[0]||'DPLA Collection').substring(0,80),
-      source:'DPLA'
+  if (wikiRes.status==='fulfilled') {
+    wikiRes.value.flat().forEach(i => images.push(i));
+  }
+  if (dplaRes.status==='fulfilled') {
+    (dplaRes.value.docs||[]).filter(d=>d.object).slice(0,3).forEach(d=>images.push({
+      url:d.object, caption:(d.sourceResource?.title?.[0]||'DPLA').substring(0,80), source:'DPLA'
     }));
   }
-
-  if (siImgs.status==='fulfilled') {
-    (siImgs.value.response?.rows||[])
+  if (siRes.status==='fulfilled') {
+    (siRes.value.response?.rows||[])
       .filter(r=>r.content?.descriptiveNonRepeating?.online_media?.media?.[0]?.thumbnail)
       .slice(0,3).forEach(r=>images.push({
-        url: r.content.descriptiveNonRepeating.online_media.media[0].thumbnail,
-        caption:(r.title||'Smithsonian').substring(0,80),
-        source:'Smithsonian'
+        url:r.content.descriptiveNonRepeating.online_media.media[0].thumbnail,
+        caption:(r.title||'Smithsonian').substring(0,80), source:'Smithsonian'
       }));
   }
-
-  if (euroImgs.status==='fulfilled') {
-    (euroImgs.value.items||[]).filter(i=>i.edmPreview?.[0]).slice(0,3).forEach(i=>images.push({
-      url: i.edmPreview[0],
+  if (euroRes.status==='fulfilled') {
+    (euroRes.value.items||[]).filter(i=>i.edmPreview?.[0]).slice(0,4).forEach(i=>images.push({
+      url:i.edmPreview[0],
       caption:(Array.isArray(i.title)?i.title[0]:i.title||'Europeana').substring(0,80),
       source:'Europeana'
     }));
   }
 
-  const display = images.filter((img,i,a)=>a.findIndex(x=>x.url===img.url)===i).slice(0,8);
+  // Met Museum — public domain, high-res, era-matched
+  const metImgs = await fetchMetMuseum(keyword, year, people);
+  images.push(...metImgs);
+
+  const display = images.filter((img,i,a)=>a.findIndex(x=>x.url===img.url)===i).slice(0,12);
   if (!display.length) return;
 
-  const html = `<div class="images-grid">
-    ${display.map(img=>`
-      <div class="image-item">
-        <img src="${img.url}" alt="${img.caption}" loading="lazy"
-          onerror="this.closest('.image-item').style.display='none'"/>
-        <div class="image-caption">${img.caption}<span class="img-source">${img.source||''}</span></div>
-      </div>`).join('')}
-  </div>`;
-  appendGoodie(grid,'🖼','Period Images',html,'Wikimedia Commons · DPLA · Smithsonian · Europeana');
+  const html = `<div class="images-grid">${display.map(img=>`
+    <div class="image-item">
+      <img src="${img.url}" alt="${img.caption}" loading="lazy" onerror="this.closest('.image-item').style.display='none'"/>
+      <div class="image-caption">${img.caption}<span class="img-source">${img.source||''}</span></div>
+    </div>`).join('')}</div>`;
+  appendGoodie(grid,'🖼','Images & Artwork',html,'The Met · Wikimedia Commons · DPLA · Smithsonian · Europeana');
 }
 
 async function fetchWikimediaImages(keyword) {
@@ -416,9 +457,8 @@ async function fetchWikimediaImages(keyword) {
     const q = encodeURIComponent(keyword);
     const data = await fetch(`https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${q}&gsrnamespace=6&prop=imageinfo&iiprop=url|extmetadata&iiurlwidth=400&format=json&origin=*&gsrlimit=8`).then(r=>r.json());
     return Object.values(data.query?.pages||{})
-      .filter(p=>p.imageinfo?.[0]?.url && !/\.(svg|gif)$/i.test(p.imageinfo[0].url) && !/flag|icon|logo|button|seal/i.test(p.title||''))
-      .slice(0,5)
-      .map(p=>({
+      .filter(p=>p.imageinfo?.[0]?.url && !/\.(svg|gif)$/i.test(p.imageinfo[0].url) && !/flag|icon|button/i.test(p.title||''))
+      .slice(0,5).map(p=>({
         url:p.imageinfo[0].url,
         caption:(p.imageinfo[0].extmetadata?.ImageDescription?.value||p.title||'').replace(/<[^>]+>/g,'').substring(0,80),
         source:'Wikimedia'
@@ -426,19 +466,224 @@ async function fetchWikimediaImages(keyword) {
   } catch { return []; }
 }
 
-// ─── GOODIE: YOUTUBE DOCUMENTARY ──────────────────────────────────────────
-async function loadYouTubeDocs(grid, keyword, year) {
+// Met Museum department IDs mapped to era/topic
+// Full list: 3=Ancient Near East, 4=Arms & Armor, 6=Asian Art, 7=Cloisters,
+//  9=Drawings & Prints, 10=Egyptian, 11=European Paintings, 12=European Sculpture,
+//  13=Greek & Roman, 14=Islamic, 17=Medieval, 18=Musical Instruments, 21=Modern
+function metDepartmentsForEvent(year, keyword) {
+  const depts = [];
+  const kw = (keyword||'').toLowerCase();
+  const y  = parseInt(year) || 0;
+
+  // Topic-specific overrides
+  if (/egypt|pharaoh|pyramid|nile|cleopatra|ramesses|tutankhamun/i.test(kw)) depts.push(10);
+  if (/greek|roman|caesar|augustus|gladiator|colosseum|sparta|athen|olymp/i.test(kw)) depts.push(13);
+  if (/islam|ottoman|caliphate|mosque|sultan|saracen|moorish|arab/i.test(kw)) depts.push(14);
+  if (/medieval|crusade|knight|castle|feudal|monastery|norman|byzantine/i.test(kw)) depts.push(17,7);
+  if (/armor|sword|battle|siege|weapon|cannon|musket|lance|shield/i.test(kw)) depts.push(4);
+  if (/music|instrument|harpsichord|lute|viol|trumpet|organ/i.test(kw)) depts.push(18);
+  if (/china|japan|india|asia|buddhist|ming|tang|samurai|mongol/i.test(kw)) depts.push(6);
+
+  // Era-based fallbacks if no topic match
+  if (!depts.length) {
+    if (y < -500)        depts.push(13, 10, 3);   // Classical antiquity + Egypt + ANE
+    else if (y < 500)    depts.push(13, 12, 3);   // Roman + European + ANE
+    else if (y < 1000)   depts.push(17, 7, 14);   // Medieval + Cloisters + Islamic
+    else if (y < 1400)   depts.push(17, 7, 11);   // Medieval + Cloisters + European
+    else if (y < 1600)   depts.push(11, 12, 9);   // European paintings + sculpture + drawings
+    else if (y < 1800)   depts.push(11, 12, 9);   // Same
+    else if (y < 1900)   depts.push(11, 21, 9);   // European + Modern + drawings
+    else                 depts.push(21, 11, 9);   // Modern + European + drawings
+  }
+  return [...new Set(depts)].slice(0,3);
+}
+
+async function fetchMetMuseum(keyword, year, people=[]) {
+  const BASE = 'https://collectionapi.metmuseum.org/public/collection/v1';
+  const images = [];
+  const y = parseInt(year) || 0;
+
+  // Build search queries — event keyword + key people names
+  const queries = [keyword, ...people.slice(0,2)].filter(Boolean);
+  const deptIds = metDepartmentsForEvent(year, keyword);
+
+  // Date range: bracket ±75 years around event, clamped to reasonable bounds
+  const dateBegin = Math.max(y - 75, -3000);
+  const dateEnd   = Math.min(y + 75,  2025);
+  const dateParam = y !== 0 ? `&dateBegin=${dateBegin}&dateEnd=${dateEnd}` : '';
+  const deptParam = deptIds.length ? `&departmentId=${deptIds.join('|')}` : '';
+
+  for (const q of queries) {
+    if (images.length >= 6) break;
+    try {
+      // Search with hasImages + isPublicDomain to ensure displayable results
+      const searchUrl = `${BASE}/search?q=${encodeURIComponent(q)}&hasImages=true&isPublicDomain=true${deptParam}${dateParam}`;
+      const search = await fetch(searchUrl).then(r=>r.json());
+      const ids = (search.objectIDs || []).slice(0, 6);
+      if (!ids.length) continue;
+
+      // Fetch object details in parallel
+      const objects = await Promise.all(
+        ids.map(id => fetch(`${BASE}/objects/${id}`).then(r=>r.json()).catch(()=>null))
+      );
+
+      for (const obj of objects) {
+        if (!obj || !obj.primaryImageSmall || images.length >= 8) continue;
+        // Build a rich caption
+        const parts = [obj.title, obj.artistDisplayName, obj.objectDate, obj.culture].filter(Boolean);
+        const caption = parts.join(' · ').substring(0, 100);
+        images.push({
+          url:     obj.primaryImageSmall,
+          caption,
+          source:  'The Met',
+          metUrl:  obj.objectURL,
+          dept:    obj.department
+        });
+      }
+    } catch {}
+  }
+  return images;
+}
+
+// ─── GOODIE 2b: MET MUSEUM ARTIFACTS ────────────────────────────────
+// Dedicated goodie showing artifacts, weapons, manuscripts, and art
+// from The Met with full metadata and links to their collection pages
+async function loadMetArtifacts(grid, keyword, year, people=[]) {
+  const BASE = 'https://collectionapi.metmuseum.org/public/collection/v1';
+  const y = parseInt(year) || 0;
+  const deptIds = metDepartmentsForEvent(year, keyword);
+  const dateBegin = Math.max(y - 100, -3000);
+  const dateEnd   = Math.min(y + 100,  2025);
+  const dateParam = y !== 0 ? `&dateBegin=${dateBegin}&dateEnd=${dateEnd}` : '';
+  const deptParam = deptIds.length ? `&departmentId=${deptIds.join('|')}` : '';
+
+  // Try isHighlight first (curator-selected important works), fall back to general
+  const queries = [keyword, ...people.slice(0,1)].filter(Boolean);
+  const artifacts = [];
+  const seenIds   = new Set();
+
+  for (const q of queries) {
+    if (artifacts.length >= 6) break;
+    for (const highlight of [true, false]) {
+      if (artifacts.length >= 6) break;
+      try {
+        const highlightParam = highlight ? '&isHighlight=true' : '';
+        const url = `${BASE}/search?q=${encodeURIComponent(q)}&hasImages=true&isPublicDomain=true${deptParam}${dateParam}${highlightParam}`;
+        const search = await fetch(url).then(r=>r.json());
+        const ids = (search.objectIDs||[]).filter(id=>!seenIds.has(id)).slice(0,5);
+        if (!ids.length) continue;
+
+        const objects = await Promise.all(
+          ids.map(id => { seenIds.add(id); return fetch(`${BASE}/objects/${id}`).then(r=>r.json()).catch(()=>null); })
+        );
+
+        for (const obj of objects) {
+          if (!obj || !obj.primaryImageSmall) continue;
+          artifacts.push(obj);
+          if (artifacts.length >= 6) break;
+        }
+      } catch {}
+    }
+  }
+
+  if (!artifacts.length) return;
+
+  const html = artifacts.map(obj => `
+    <div class="met-artifact">
+      <a href="${obj.objectURL||'#'}" target="_blank" class="met-img-link">
+        <img src="${obj.primaryImageSmall}" alt="${obj.title||''}" loading="lazy"
+          class="met-img" onerror="this.closest('.met-artifact').style.display='none'"/>
+      </a>
+      <div class="met-info">
+        <div class="met-title">
+          <a href="${obj.objectURL||'#'}" target="_blank">${(obj.title||'Untitled').substring(0,80)}</a>
+        </div>
+        ${obj.artistDisplayName ? `<div class="met-artist">${obj.artistDisplayName}${obj.artistDisplayBio?' · '+obj.artistDisplayBio.substring(0,50):''}</div>` : ''}
+        <div class="met-meta">
+          ${[obj.objectDate, obj.medium, obj.culture, obj.department].filter(Boolean).map(s=>s.substring(0,40)).join(' · ')}
+        </div>
+        ${obj.dimensions ? `<div class="met-dims">${obj.dimensions.substring(0,60)}</div>` : ''}
+      </div>
+    </div>`).join('');
+
+  appendGoodie(grid,'🏛️','The Met Collection',html,
+    'The Metropolitan Museum of Art · Public Domain · metmuseum.org');
+}
+
+// ─── GOODIE 3: COINS ─────────────────────────────────────────────────
+async function loadCoins(grid, keyword, people=[], isRoman=false) {
+  const coinImages = [];
+
+  // 1. Numista API — primary coin source
+  // Response: { count, types: [{ id, title, issuer:{name}, min_year, max_year,
+  //   obverse_thumbnail, reverse_thumbnail }] }
+  const numistaQueries = [
+    ...people.slice(0,2),
+    keyword.split(' ').slice(0,3).join(' ')
+  ];
+  for (const q of numistaQueries) {
+    try {
+      const data = await fetch(`/api/numista?q=${encodeURIComponent(q)}&count=6`).then(r=>r.json());
+      (data.types||[]).forEach(t => {
+        const label = [t.title, t.issuer?.name, t.min_year ? `${t.min_year}${t.max_year&&t.max_year!==t.min_year?'–'+t.max_year:''}` : ''].filter(Boolean).join(' · ');
+        if (t.obverse_thumbnail) coinImages.push({ url: t.obverse_thumbnail, caption: label, source: 'Numista' });
+        if (t.reverse_thumbnail) coinImages.push({ url: t.reverse_thumbnail, caption: label + ' (reverse)', source: 'Numista' });
+      });
+    } catch {}
+    if (coinImages.length >= 4) break;
+  }
+
+  // 2. Wikimedia numismatic search — fills gaps
+  if (coinImages.length < 4) {
+    const wikiQueries = [
+      ...people.slice(0,2).map(p => p + ' coin numismatic'),
+      keyword.split(' ').slice(0,2).join(' ') + ' medieval coin'
+    ];
+    for (const q of wikiQueries) {
+      const imgs = await fetchWikimediaImages(q);
+      coinImages.push(...imgs);
+      if (coinImages.length >= 6) break;
+    }
+  }
+
+  // 3. OCRE — Roman empire coins (no key needed)
+  if (isRoman && coinImages.length < 4) {
+    try {
+      const q = people[0] || keyword.split(' ')[0];
+      const data = await fetch(`/api/ocre?q=${encodeURIComponent(q)}`).then(r=>r.json());
+      (data.results||[]).filter(c=>c.thumbnail).slice(0,3).forEach(c=>coinImages.push({
+        url: c.thumbnail,
+        caption: c.label || 'Roman Imperial coin',
+        source: 'OCRE'
+      }));
+    } catch {}
+  }
+
+  const display = coinImages.filter((c,i,a)=>a.findIndex(x=>x.url===c.url)===i).slice(0,8);
+  if (!display.length) return;
+
+  const html = `
+    <p class="goodie-context">Coinage from the rulers and regions involved in this event — a direct window into the economy, iconography, and self-image of the period.</p>
+    <div class="images-grid">${display.map(c=>`
+      <div class="image-item">
+        <img src="${c.url}" alt="${c.caption}" loading="lazy" onerror="this.closest('.image-item').style.display='none'"/>
+        <div class="image-caption">${c.caption}<span class="img-source">${c.source||''}</span></div>
+      </div>`).join('')}</div>`;
+  appendGoodie(grid,'🪙','Coins of the Era',html,'Numista · Wikimedia Numismatic · OCRE (Roman Coins)');
+}
+
+// ─── GOODIE 4: YOUTUBE DOCS ───────────────────────────────────────────
+async function loadYouTubeDocs(grid, keyword, fallback1, fallback2) {
   try {
-    const data = await fetch(`/api/youtube?q=${encodeURIComponent(keyword)}&type=documentary`).then(r=>r.json());
+    const params = new URLSearchParams({ q: keyword, fallback1, fallback2, type:'docs' });
+    const data = await fetch(`/api/youtube?${params}`).then(r=>r.json());
     const items = data.items||[];
     if (!items.length) return;
-
-    const html = items.slice(0,4).map(v=>`
+    const html = items.slice(0,5).map(v=>`
       <a href="https://youtube.com/watch?v=${v.id.videoId}" target="_blank" class="video-item">
-        <img class="video-thumb-img" src="${v.snippet.thumbnails?.medium?.url||''}" alt=""
-          onerror="this.style.display='none'"/>
+        <img class="video-thumb-img" src="${v.snippet.thumbnails?.medium?.url||''}" alt="" onerror="this.style.display='none'"/>
         <div>
-          <div class="video-title">${v.snippet.title.substring(0,80)}</div>
+          <div class="video-title">${v.snippet.title.substring(0,90)}</div>
           <div class="video-channel">${v.snippet.channelTitle}</div>
           <div class="video-source">YouTube</div>
         </div>
@@ -447,63 +692,61 @@ async function loadYouTubeDocs(grid, keyword, year) {
   } catch {}
 }
 
-// ─── GOODIE: YOUTUBE NEWS ─────────────────────────────────────────────────
-async function loadYouTubeNews(grid, keyword, year) {
+// ─── GOODIE 5: YOUTUBE NEWS ──────────────────────────────────────────
+async function loadYouTubeNews(grid, keyword, fallback1) {
   try {
-    const data = await fetch(`/api/youtube?q=${encodeURIComponent(keyword)}&type=news`).then(r=>r.json());
-    const items = (data.items||[]).filter(v=>/news|report|cnn|bbc|nbc|abc|cbs|pbs|reuters|ap /i.test(v.snippet.channelTitle+' '+v.snippet.title));
+    const params = new URLSearchParams({ q: keyword, fallback1, type:'news' });
+    const data = await fetch(`/api/youtube?${params}`).then(r=>r.json());
+    const items = (data.items||[]).filter(v=>
+      /news|bbc|cnn|nbc|abc|cbs|pbs|reuters|ap\b|channel\s*4|itv|sky|report|footage/i
+        .test(v.snippet.channelTitle+' '+v.snippet.title+' '+(v.snippet.description||''))
+    );
     if (!items.length) return;
-
-    const html = items.slice(0,3).map(v=>`
+    const html = items.slice(0,4).map(v=>`
       <a href="https://youtube.com/watch?v=${v.id.videoId}" target="_blank" class="video-item">
-        <img class="video-thumb-img" src="${v.snippet.thumbnails?.medium?.url||''}" alt=""
-          onerror="this.style.display='none'"/>
+        <img class="video-thumb-img" src="${v.snippet.thumbnails?.medium?.url||''}" alt="" onerror="this.style.display='none'"/>
         <div>
-          <div class="video-title">${v.snippet.title.substring(0,80)}</div>
+          <div class="video-title">${v.snippet.title.substring(0,90)}</div>
           <div class="video-channel">${v.snippet.channelTitle}</div>
-          <div class="video-source">YouTube · News Coverage</div>
+          <div class="video-source">YouTube · News</div>
         </div>
       </a>`).join('');
     appendGoodie(grid,'📺','News Coverage',html,'YouTube Data API v3');
   } catch {}
 }
 
-// ─── GOODIE: INTERNET ARCHIVE VIDEO ───────────────────────────────────────
+// ─── GOODIE 6: ARCHIVE VIDEO ─────────────────────────────────────────
 async function loadArchiveVideo(grid, keyword) {
   try {
-    const data = await fetch(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(keyword)}+mediatype:movies&fl[]=identifier,title,description&sort[]=downloads+desc&rows=5&output=json`).then(r=>r.json());
+    const data = await fetch(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(keyword)}+mediatype:movies&fl[]=identifier,title,description&sort[]=downloads+desc&rows=6&output=json`).then(r=>r.json());
     const items = data.response?.docs||[];
     if (!items.length) return;
-
     const html = items.slice(0,4).map(v=>`
       <a href="https://archive.org/details/${v.identifier}" target="_blank" class="video-item">
         <div class="video-thumb-placeholder">▶</div>
         <div>
-          <div class="video-title">${(v.title||'Untitled').substring(0,80)}</div>
-          <div class="video-source">Internet Archive · Free to watch</div>
+          <div class="video-title">${(v.title||'Untitled').substring(0,90)}</div>
+          <div class="video-source">Internet Archive · Free</div>
         </div>
       </a>`).join('');
-    appendGoodie(grid,'📽','Archival Film & Documentary',html,'Internet Archive (archive.org)');
+    appendGoodie(grid,'📽','Archival Film',html,'Internet Archive (archive.org)');
   } catch {}
 }
 
-// ─── GOODIE: INTERNET ARCHIVE AUDIO ──────────────────────────────────────
+// ─── GOODIE 7: ARCHIVE AUDIO ─────────────────────────────────────────
 async function loadArchiveAudio(grid, keyword) {
   try {
     const data = await fetch(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(keyword)}+mediatype:audio&fl[]=identifier,title&sort[]=downloads+desc&rows=4&output=json`).then(r=>r.json());
     const items = data.response?.docs||[];
     if (!items.length) return;
-
-    // Fetch audio file URLs
     const audioItems = await Promise.all(items.slice(0,3).map(async item=>{
       try {
         const meta = await fetch(`https://archive.org/metadata/${item.identifier}`).then(r=>r.json());
         const file = (meta.files||[]).find(f=>/\.(mp3|ogg)$/i.test(f.name));
         return { title:item.title, identifier:item.identifier,
-                 audioUrl: file ? `https://archive.org/download/${item.identifier}/${file.name}` : null };
-      } catch { return { title:item.title, identifier:item.identifier, audioUrl:null }; }
+                 audioUrl:file?`https://archive.org/download/${item.identifier}/${file.name}`:null };
+      } catch { return {title:item.title,identifier:item.identifier,audioUrl:null}; }
     }));
-
     const html = audioItems.map(a=>`
       <div class="audio-item">
         <div class="audio-title">${(a.title||'Untitled').substring(0,80)}</div>
@@ -515,427 +758,370 @@ async function loadArchiveAudio(grid, keyword) {
   } catch {}
 }
 
-// ─── GOODIE: HISTORIC NEWSPAPERS ─────────────────────────────────────────
+// ─── GOODIE 8: NEWSPAPERS ────────────────────────────────────────────
 async function loadNewspapers(grid, keyword, year) {
   try {
-    const endYear = Math.min(year + 2, 1963);
+    const endYear = Math.min(year+2,1963);
     const data = await fetch(`https://www.loc.gov/collections/chronicling-america/?andtext=${encodeURIComponent(keyword)}&start_date=${year-1}-01-01&end_date=${endYear}-12-31&fo=json`).then(r=>r.json());
     const results = data.results||[];
     if (!results.length) return;
-
     const html = results.slice(0,4).map(r=>`
       <div class="newspaper-item">
-        ${r.image_url?.[0] ? `
+        ${r.image_url?.[0]?`
           <a href="${r.url||'#'}" target="_blank" class="newspaper-page-link">
             <img src="${r.image_url[0]}" class="newspaper-thumb" alt="Newspaper page"
               onerror="this.style.display='none'" loading="lazy"/>
-            <div class="newspaper-zoom">🔍 Click to read</div>
-          </a>` : ''}
-        <div class="newspaper-title">
-          <a href="${r.url||'#'}" target="_blank">${(r.title||'Untitled').substring(0,80)}</a>
-        </div>
+            <div class="newspaper-zoom">🔍 Click to read full page</div>
+          </a>`:''}
+        <div class="newspaper-title"><a href="${r.url||'#'}" target="_blank">${(r.title||'').substring(0,80)}</a></div>
         <div class="newspaper-meta">${r.date||''} · ${r.partof?.[0]||'Chronicling America'}</div>
-        ${r.description?.[0] ? `<div class="newspaper-snippet">${r.description[0].substring(0,150)}…</div>` : ''}
+        ${r.description?.[0]?`<div class="newspaper-snippet">${r.description[0].substring(0,160)}…</div>`:''}
       </div>`).join('');
     appendGoodie(grid,'📰','Historic Newspapers',html,'Chronicling America · Library of Congress · 1770–1963');
   } catch {}
 }
 
-// ─── GOODIE: PRIMARY SOURCES (ancient/medieval) ───────────────────────────
-async function loadPrimarySources(grid, keyword, year) {
-  try {
-    const data = await fetch(`https://gutendex.com/books/?search=${encodeURIComponent(keyword)}&topic=history`).then(r=>r.json());
-    const books = data.results||[];
-    if (!books.length) return;
+// ─── GOODIE 9: PRIMARY SOURCES ───────────────────────────────────────
+async function loadPrimarySources(grid, keyword, year, people=[]) {
+  const queries = [keyword, ...people.slice(0,2)];
+  const books = [];
+  const seen  = new Set();
 
-    const html = books.slice(0,4).map(b=>`
-      <div class="book-item">
-        <div class="book-spine" style="background:#8B4513"></div>
-        <div style="flex:1">
-          <div class="book-title">
-            <a href="https://gutenberg.org/ebooks/${b.id}" target="_blank">${b.title}</a>
-          </div>
-          <div class="book-author">${b.authors?.[0]?.name||'Unknown'}</div>
-          <span class="book-type">Primary Source · Free to Read</span>
-        </div>
-      </div>`).join('');
-    appendGoodie(grid,'📜','Primary Sources',html,'Project Gutenberg (gutenberg.org) · Free public domain texts');
+  for (const q of queries) {
+    try {
+      const data = await fetch(`https://gutendex.com/books/?search=${encodeURIComponent(q)}&topic=history`).then(r=>r.json());
+      (data.results||[]).forEach(b=>{
+        if(seen.has(b.id)) return; seen.add(b.id);
+        books.push({
+          id:b.id, title:b.title,
+          author:b.authors?.[0]?.name||'Unknown',
+          url:`https://gutenberg.org/ebooks/${b.id}`,
+          formats: b.formats
+        });
+      });
+    } catch {}
+  }
+
+  // Also check Internet Archive texts
+  try {
+    const data = await fetch(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(keyword)}+mediatype:texts+date:[${year-100}+TO+${year+100}]&fl[]=identifier,title,creator&sort[]=downloads+desc&rows=4&output=json`).then(r=>r.json());
+    (data.response?.docs||[]).forEach(b=>{
+      books.push({ title:b.title, author:b.creator||'Unknown',
+                   url:`https://archive.org/details/${b.identifier}`,
+                   source:'Internet Archive' });
+    });
   } catch {}
+
+  if (!books.length) return;
+
+  const html = books.slice(0,6).map(b=>`
+    <div class="book-item">
+      <div class="book-spine" style="background:#8B4513"></div>
+      <div style="flex:1">
+        <div class="book-title"><a href="${b.url}" target="_blank">${b.title}</a></div>
+        <div class="book-author">${b.author}</div>
+        <span class="book-type">${b.source||'Project Gutenberg'} · Free to Read</span>
+      </div>
+    </div>`).join('');
+  appendGoodie(grid,'📜','Primary Sources & Chronicles',html,'Project Gutenberg · Internet Archive');
 }
 
-// ─── GOODIE: ETYMOLOGY ────────────────────────────────────────────────────
+// ─── GOODIE 10: ETYMOLOGY ────────────────────────────────────────────
 async function loadEtymology(grid, terms) {
-  const entries = await Promise.all(terms.map(async word => {
+  const entries = await Promise.all(terms.map(async word=>{
     try {
       const data = await fetch(`/api/dictionary/${encodeURIComponent(word)}`).then(r=>r.json());
       if (!Array.isArray(data)||!data[0]||typeof data[0]==='string') return null;
       const entry = data[0];
-      const etText = entry.et?.[0]?.[1]
-        ? entry.et[0][1].replace(/\{[^}]+\}/g,'').replace(/\*/g,'').trim()
-        : null;
+      const etText = entry.et?.[0]?.[1]?.replace(/\{[^}]+\}/g,'').replace(/\*/g,'').trim();
       if (!etText) return null;
-      return {
-        word: entry.hwi?.hw?.replace(/\*/g,'')||word,
-        pos:  entry.fl||'',
-        etymology: etText,
-        definition: entry.shortdef?.[0]||''
-      };
+      return { word:entry.hwi?.hw?.replace(/\*/g,'')||word, pos:entry.fl||'',
+               etymology:etText, definition:entry.shortdef?.[0]||'' };
     } catch { return null; }
   }));
-
   const valid = entries.filter(Boolean);
   if (!valid.length) return;
-
   const html = valid.map(e=>`
     <div class="word-item">
       <div><span class="word-term">${e.word}</span><span class="word-pos">${e.pos}</span></div>
       <div class="word-etymology">⟐ ${e.etymology}</div>
-      ${e.definition ? `<div class="word-definition">${e.definition}</div>` : ''}
+      ${e.definition?`<div class="word-definition">${e.definition}</div>`:''}
     </div>`).join('');
   appendGoodie(grid,'📜','Words of the Era',html,'Merriam-Webster Collegiate Dictionary');
 }
 
-// ─── GOODIE: THESAURUS ────────────────────────────────────────────────────
+// ─── GOODIE 11: THESAURUS ────────────────────────────────────────────
 async function loadThesaurus(grid, word) {
   try {
     const data = await fetch(`/api/thesaurus/${encodeURIComponent(word)}`).then(r=>r.json());
     if (!Array.isArray(data)||!data[0]||typeof data[0]==='string') return;
     const entry = data[0];
-    const syns  = entry.meta?.syns?.[0]?.slice(0,8)||[];
-    const ants  = entry.meta?.ants?.[0]?.slice(0,4)||[];
+    const syns = entry.meta?.syns?.[0]?.slice(0,8)||[];
+    const ants = entry.meta?.ants?.[0]?.slice(0,4)||[];
     if (!syns.length) return;
-
     const html = `
       <div class="word-term">${entry.hwi?.hw?.replace(/\*/g,'')||word}</div>
-      <div style="margin-top:8px">
-        <span class="word-pos">Synonyms</span>
+      <div style="margin-top:8px"><span class="word-pos">Synonyms</span>
         <div class="thes-words">${syns.map(s=>`<span class="thes-word">${s}</span>`).join('')}</div>
       </div>
-      ${ants.length ? `<div style="margin-top:8px">
-        <span class="word-pos">Antonyms</span>
+      ${ants.length?`<div style="margin-top:8px"><span class="word-pos">Antonyms</span>
         <div class="thes-words">${ants.map(s=>`<span class="thes-word antonym">${s}</span>`).join('')}</div>
-      </div>` : ''}`;
+      </div>`:''}`;
     appendGoodie(grid,'🔤','Period Thesaurus',html,'Merriam-Webster Thesaurus');
   } catch {}
 }
 
-// ─── GOODIE: MUSIC ────────────────────────────────────────────────────────
+// ─── GOODIE 12: LIFE & SOCIETY ───────────────────────────────────────
+// Pull Wikipedia articles on the key places/regions for social context
+async function loadLifeAndSociety(grid, keyword, year, fullText) {
+  // Extract place names from the article
+  const placePatterns = [
+    /\bin\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/g,
+    /\bof\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/g,
+  ];
+  const places = new Set();
+  for (const pat of placePatterns) {
+    let m;
+    while ((m = pat.exec(fullText)) !== null) {
+      const place = m[1];
+      if (place.length > 3 && !/^(The|This|That|His|Her|Their|Our|Its|All|Both|Each)$/.test(place)) {
+        places.add(place);
+        if (places.size >= 3) break;
+      }
+    }
+    if (places.size >= 3) break;
+  }
+
+  const placeList = [...places].slice(0,2);
+  if (!placeList.length) return;
+
+  const summaries = await Promise.all(placeList.map(async place=>{
+    try {
+      // Look for "Medieval [place]", "[place] in the Middle Ages", etc.
+      const contextQuery = year < 1500
+        ? `${place} in the Middle Ages`
+        : year < 1800 ? `${place} early modern history`
+        : `${place}`;
+      const encoded = encodeURIComponent(contextQuery.replace(/ /g,'_'));
+      const data = await fetch(
+        `https://en.wikipedia.org/api/rest_v1/page/summary/${encoded}`,
+        {headers:{'User-Agent':'PableHistoryApp/3.0 (educational; robpoole24@gmail.com)'}}
+      ).then(r=>r.json());
+      if (!data.extract || data.type==='disambiguation') return null;
+      return { place, extract:data.extract.substring(0,400), url:data.content_urls?.desktop?.page,
+               thumbnail:data.thumbnail?.source };
+    } catch { return null; }
+  }));
+
+  const valid = summaries.filter(Boolean);
+  if (!valid.length) return;
+
+  const html = `
+    <p class="goodie-context">Understanding the people, places, and daily life behind this event.</p>
+    ${valid.map(s=>`
+      <div class="society-item">
+        ${s.thumbnail?`<img src="${s.thumbnail}" class="society-thumb" onerror="this.style.display='none'" loading="lazy"/>` :''}
+        <div class="society-name">${s.place}</div>
+        <div class="society-extract">${s.extract}</div>
+        ${s.url?`<a href="${s.url}" target="_blank" class="archive-link">Read more →</a>`:''}
+      </div>`).join('')}`;
+  appendGoodie(grid,'🏘️','Life & Society',html,'Wikipedia');
+}
+
+// ─── GOODIE 13: MUSIC ────────────────────────────────────────────────
 async function loadMusic(grid, year, keyword) {
   const epoch = musicEpoch(year);
-
   if (epoch) {
-    // Pre-1910: Open Opus — composers alive at the time
     try {
       const data = await fetch(`https://api.openopus.org/composer/list/epoch/${epoch}.json`).then(r=>r.json());
       const composers = (data.composers||[]).filter(c=>{
-        const born = parseInt(c.birth);
-        const died = parseInt(c.death)||9999;
-        return born <= year+50 && died >= year-50;
-      }).slice(0,5);
+        const born=parseInt(c.birth), died=parseInt(c.death)||9999;
+        return born<=year+60 && died>=year-60;
+      }).slice(0,4);
+      if (!composers.length) return;
 
-      if (!composers.length && epoch !== 'Medieval') return;
-
-      // For each composer, try to find a playable recording on Internet Archive
-      const withAudio = await Promise.all(composers.slice(0,4).map(async c=>{
+      const withAudio = await Promise.all(composers.map(async c=>{
         try {
           const q  = encodeURIComponent(c.complete_name);
           const ar = await fetch(`https://archive.org/advancedsearch.php?q=${q}+mediatype:audio&fl[]=identifier,title&rows=1&output=json`).then(r=>r.json());
           const item = ar.response?.docs?.[0];
-          if (!item) return {...c, audioUrl:null, audioTitle:null};
+          if (!item) return {...c, audioUrl:null};
           const meta = await fetch(`https://archive.org/metadata/${item.identifier}`).then(r=>r.json());
           const file = (meta.files||[]).find(f=>/\.(mp3|ogg)$/i.test(f.name));
-          return {
-            ...c,
-            audioUrl: file ? `https://archive.org/download/${item.identifier}/${file.name}` : null,
-            audioTitle: item.title||null,
-            archiveId: item.identifier
-          };
-        } catch { return {...c, audioUrl:null}; }
+          return {...c, audioUrl:file?`https://archive.org/download/${item.identifier}/${file.name}`:null,
+                   audioTitle:item.title, archiveId:item.identifier};
+        } catch { return {...c,audioUrl:null}; }
       }));
 
       const html = withAudio.map(c=>`
         <div class="music-item">
-          ${c.portrait ? `<img src="${c.portrait}" class="composer-portrait" onerror="this.style.display='none'"/>` : '<div class="music-icon">♪</div>'}
+          ${c.portrait?`<img src="${c.portrait}" class="composer-portrait" onerror="this.style.display='none'"/>`:'<div class="music-icon">♪</div>'}
           <div style="flex:1">
             <div class="music-title">${c.complete_name}</div>
             <div class="music-composer">${epoch} · ${c.birth?.substring(0,4)||'?'}–${c.death?.substring(0,4)||'present'}</div>
             ${c.audioUrl
-              ? `<div class="audio-label">${c.audioTitle?.substring(0,60)||'Recording'}</div>
+              ? `<div class="audio-label">${(c.audioTitle||'').substring(0,60)}</div>
                  <audio controls preload="none" style="width:100%;margin-top:4px"><source src="${c.audioUrl}"></audio>`
               : c.archiveId
                 ? `<a href="https://archive.org/details/${c.archiveId}" target="_blank" class="archive-link">Listen on archive.org →</a>`
-                : `<div class="music-note">Search IMSLP for scores and recordings</div>`}
+                : `<div class="music-note">Search IMSLP.org for free scores</div>`}
           </div>
         </div>`).join('');
-      appendGoodie(grid,'🎵',`Music of the ${epoch} Era`,html,'Open Opus · Internet Archive · IMSLP');
+      appendGoodie(grid,'🎵',`Music of the ${epoch}`,html,'Open Opus · Internet Archive · IMSLP');
     } catch {}
   } else {
-    // Post-1910: MusicBrainz + Archive audio
+    // Post-1910 — MusicBrainz
     try {
-      const q    = encodeURIComponent(`${keyword} ${year}`);
-      const data = await fetch(`https://musicbrainz.org/ws/2/recording?query=${q}&limit=4&fmt=json`,
-        {headers:{'User-Agent':'PableHistoryApp/2.0 (educational; robpoole24@gmail.com)'}}).then(r=>r.json());
+      const data = await fetch(`https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(keyword)}&limit=4&fmt=json`,
+        {headers:{'User-Agent':'PableHistoryApp/3.0 (educational; robpoole24@gmail.com)'}}).then(r=>r.json());
       const recs = data.recordings||[];
       if (!recs.length) return;
-
-      // Try to find playable audio for each
-      const withAudio = await Promise.all(recs.slice(0,3).map(async rec=>{
-        try {
-          const sq  = encodeURIComponent(rec.title);
-          const ar  = await fetch(`https://archive.org/advancedsearch.php?q=${sq}+mediatype:audio&fl[]=identifier&rows=1&output=json`).then(r=>r.json());
-          const id  = ar.response?.docs?.[0]?.identifier;
-          if (!id) return {...rec, audioUrl:null};
-          const meta = await fetch(`https://archive.org/metadata/${id}`).then(r=>r.json());
-          const file = (meta.files||[]).find(f=>/\.(mp3|ogg)$/i.test(f.name));
-          return {...rec, audioUrl: file ? `https://archive.org/download/${id}/${file.name}` : null, archiveId:id};
-        } catch { return {...rec, audioUrl:null}; }
-      }));
-
-      const html = withAudio.map(r=>`
+      const html = recs.map(r=>`
         <div class="music-item">
           <div class="music-icon">♪</div>
           <div style="flex:1">
             <div class="music-title">${r.title}</div>
-            <div class="music-composer">${r['artist-credit']?.[0]?.artist?.name||'Various'} · ${r['first-release-date']?.substring(0,4)||''}</div>
-            ${r.audioUrl
-              ? `<audio controls preload="none" style="width:100%;margin-top:4px"><source src="${r.audioUrl}"></audio>`
-              : r.archiveId
-                ? `<a href="https://archive.org/details/${r.archiveId}" target="_blank" class="archive-link">Listen on archive.org →</a>`
-                : ''}
+            <div class="music-composer">${r['artist-credit']?.[0]?.artist?.name||'Various'}</div>
           </div>
         </div>`).join('');
-      appendGoodie(grid,'🎵','Music of the Period',html,'MusicBrainz · Internet Archive');
+      appendGoodie(grid,'🎵','Music',html,'MusicBrainz');
     } catch {}
   }
 }
 
-// ─── GOODIE: BOOKS ────────────────────────────────────────────────────────
-async function loadBooks(grid, keyword, eventTitle) {
-  // Strategy: search specifically for books ABOUT this event
-  // Use intitle: qualifier + subject to ensure relevance
-  const searchTerms = [
-    `intitle:"${keyword.split(' ').slice(0,3).join(' ')}"`,
-    `subject:"${keyword.split(' ').slice(0,2).join(' ')}"`
-  ];
+// ─── GOODIE 14: BOOKS ────────────────────────────────────────────────
+async function loadBooks(grid, keyword, eventTitle, people=[], year=0) {
+  const books = [], seen = new Set();
 
-  const [olRes, gbRes, gutRes] = await Promise.allSettled([
-    fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(keyword)}&limit=6&fields=key,title,author_name,first_publish_year,cover_i,subject&subject=${encodeURIComponent(keyword.split(' ')[0])}`).then(r=>r.json()),
-    fetch(`/api/books?q=${encodeURIComponent(searchTerms[0])}&maxResults=6`).then(r=>r.json()),
-    fetch(`https://gutendex.com/books/?search=${encodeURIComponent(keyword)}`).then(r=>r.json()),
-  ]);
+  // Build targeted queries: specific event + key figures + era
+  const queries = [
+    keyword,
+    ...people.slice(0,2),
+    year < 1600 ? `${keyword.split(' ').slice(0,3).join(' ')} medieval history` : null,
+  ].filter(Boolean);
 
-  const books = [];
-  const seenTitles = new Set();
-
-  // Open Library — filter by relevance
-  if (olRes.status==='fulfilled') {
-    (olRes.value.docs||[]).filter(b=>{
-      const t = (b.title||'').toLowerCase();
-      const kwords = keyword.toLowerCase().split(' ').filter(w=>w.length>3);
-      return kwords.some(w=>t.includes(w));
-    }).slice(0,4).forEach(b=>{
-      const key = b.title?.toLowerCase();
-      if (seenTitles.has(key)) return;
-      seenTitles.add(key);
-      books.push({
-        title:b.title, author:b.author_name?.[0]||'Unknown',
-        year:b.first_publish_year,
-        coverUrl:b.cover_i?`https://covers.openlibrary.org/b/id/${b.cover_i}-M.jpg`:null,
-        url:b.key?`https://openlibrary.org${b.key}`:null,
-        type:'Non-Fiction', source:'Open Library'
+  for (const q of queries) {
+    // Open Library
+    try {
+      const data = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=4&fields=key,title,author_name,first_publish_year,cover_i`).then(r=>r.json());
+      (data.docs||[]).filter(b=>{
+        const t=(b.title||'').toLowerCase();
+        return q.toLowerCase().split(' ').filter(w=>w.length>3).some(w=>t.includes(w));
+      }).slice(0,3).forEach(b=>{
+        const key=b.title?.toLowerCase(); if(seen.has(key)) return; seen.add(key);
+        books.push({ title:b.title, author:b.author_name?.[0]||'Unknown', year:b.first_publish_year,
+          coverUrl:b.cover_i?`https://covers.openlibrary.org/b/id/${b.cover_i}-M.jpg`:null,
+          url:b.key?`https://openlibrary.org${b.key}`:null, source:'Open Library' });
       });
-    });
-  }
+    } catch {}
 
-  // Google Books — relevance filter
-  if (gbRes.status==='fulfilled') {
-    (gbRes.value.items||[]).forEach(item=>{
-      const vol = item.volumeInfo;
-      const t   = (vol.title||'').toLowerCase();
-      const kwords = keyword.toLowerCase().split(' ').filter(w=>w.length>3);
-      if (!kwords.some(w=>t.includes(w))) return;
-      const key = t;
-      if (seenTitles.has(key)) return;
-      seenTitles.add(key);
-      books.push({
-        title:vol.title, author:vol.authors?.[0]||'Unknown',
-        year:vol.publishedDate?.substring(0,4),
-        coverUrl:vol.imageLinks?.thumbnail||null,
-        url:vol.infoLink||null,
-        type:vol.categories?.[0]||'Non-Fiction', source:'Google Books'
+    // Google Books
+    try {
+      const data = await fetch(`/api/books?q=${encodeURIComponent(q)}&maxResults=4`).then(r=>r.json());
+      (data.items||[]).forEach(item=>{
+        const vol=item.volumeInfo, t=(vol.title||'').toLowerCase();
+        if (!q.toLowerCase().split(' ').filter(w=>w.length>3).some(w=>t.includes(w))) return;
+        const key=t; if(seen.has(key)) return; seen.add(key);
+        books.push({ title:vol.title, author:vol.authors?.[0]||'Unknown',
+          year:vol.publishedDate?.substring(0,4),
+          coverUrl:vol.imageLinks?.thumbnail||null, url:vol.infoLink||null,
+          source:'Google Books' });
       });
-    });
-  }
+    } catch {}
 
-  // Gutenberg — primary sources / fiction
-  if (gutRes.status==='fulfilled') {
-    (gutRes.value.results||[]).slice(0,2).forEach(b=>{
-      const key = b.title?.toLowerCase();
-      if (seenTitles.has(key)) return;
-      seenTitles.add(key);
-      books.push({
-        title:b.title, author:b.authors?.[0]?.name||'Unknown',
-        coverUrl:b.formats?.['image/jpeg']||null,
-        url:`https://gutenberg.org/ebooks/${b.id}`,
-        type:'Free to Read (Public Domain)', source:'Project Gutenberg'
-      });
-    });
+    if (books.length >= 8) break;
   }
 
   if (!books.length) return;
-
   const colors = ['#8B4513','#4A3728','#2C1A0E','#A07840','#6B3A2A','#3D2B1A'];
   const html = books.slice(0,8).map((b,i)=>`
     <div class="book-item">
       <div class="book-cover">
         ${b.coverUrl
-          ? `<img src="${b.coverUrl}" alt="${b.title}" loading="lazy"
-              onerror="this.parentElement.innerHTML='<div class=\'book-cover-placeholder\' style=\'background:${colors[i%colors.length]}\'></div>'">`
+          ? `<img src="${b.coverUrl}" alt="${b.title}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\'book-cover-placeholder\' style=\'background:${colors[i%colors.length]}\'></div>'">`
           : `<div class="book-cover-placeholder" style="background:${colors[i%colors.length]}"></div>`}
       </div>
       <div style="flex:1">
-        <div class="book-title">
-          ${b.url?`<a href="${b.url}" target="_blank">${b.title}</a>`:b.title}
-        </div>
+        <div class="book-title">${b.url?`<a href="${b.url}" target="_blank">${b.title}</a>`:b.title}</div>
         <div class="book-author">${b.author}${b.year?` · ${b.year}`:''}</div>
-        <span class="book-type">${b.type}</span>
         <div class="book-note" style="font-size:10px;opacity:0.6;margin-top:2px">${b.source}</div>
       </div>
     </div>`).join('');
-  appendGoodie(grid,'📚','Reading List',html,'Open Library · Google Books · Project Gutenberg');
+  appendGoodie(grid,'📚','Reading List',html,'Open Library · Google Books');
 }
 
-// ─── GOODIE: INFLATION ────────────────────────────────────────────────────
-async function loadInflation(grid, currencyMention, year, extract) {
+// ─── GOODIE 15: INFLATION ────────────────────────────────────────────
+async function loadInflation(grid, mention, year) {
   if (year < 1913) {
-    // Pre-FRED hardcoded anchors (BLS/historical research)
-    const anchors = {
-      1: 0.02, 100: 0.05, 500: 0.12, 1000: 0.20, 1400: 0.28,
-      1500: 0.38, 1600: 0.55, 1650: 0.72, 1700: 0.85, 1750: 1.0,
-      1765: 1.08, 1770: 1.12, 1776: 1.20, 1780: 1.45, 1790: 1.30,
-      1800: 1.60, 1812: 1.95, 1830: 1.40, 1850: 1.50, 1865: 2.20,
-      1880: 1.45, 1900: 1.60, 1910: 1.80
-    };
-    const modernCPI = 314;
-    const years     = Object.keys(anchors).map(Number).sort((a,b)=>a-b);
-    const nearest   = years.reduce((p,c)=>Math.abs(c-year)<Math.abs(p-year)?c:p);
-    const multiplier = (modernCPI / anchors[nearest]).toFixed(0);
-
+    const anchors = {1:0.02,500:0.12,1000:0.20,1200:0.25,1400:0.28,1500:0.38,
+      1600:0.55,1650:0.72,1700:0.85,1750:1.0,1770:1.12,1780:1.45,
+      1800:1.60,1830:1.40,1850:1.50,1865:2.20,1880:1.45,1900:1.60,1910:1.80};
+    const ys=Object.keys(anchors).map(Number).sort((a,b)=>a-b);
+    const nearest=ys.reduce((p,c)=>Math.abs(c-year)<Math.abs(p-year)?c:p);
+    const mult=Math.round(314/anchors[nearest]);
     appendGoodie(grid,'💰','What It Cost — Then & Now',`
       <div class="money-display">
-        <div class="money-mention">"${currencyMention}"</div>
-        <div class="money-original">as mentioned in the historical record</div>
+        <div class="money-mention">"${mention}"</div>
+        <div class="money-original">as mentioned · ${year}</div>
         <div class="money-arrow">↓</div>
-        <div class="money-modern">≈ ×${Number(multiplier).toLocaleString()} in today's dollars</div>
-        <div class="money-note">Based on historical price research anchors — pre-FRED era</div>
-      </div>
-      <div class="money-context">Purchasing power comparison across ${2024-year} years</div>
-    `,'Historical CPI anchors (BLS / MeasuringWorth research)');
+        <div class="money-modern">≈ ×${mult.toLocaleString()} in today's dollars</div>
+        <div class="money-note">Historical price research anchors · pre-FRED era</div>
+      </div>`,'Historical CPI anchors · BLS / MeasuringWorth research');
     return;
   }
-
-  // Post-1913: real FRED data
   try {
     if (!cpiCache) {
       const data = await fetch('/api/fred/cpi').then(r=>r.json());
       cpiCache = data.observations||[];
     }
-    const eventObs  = cpiCache.find(o=>o.date.startsWith(String(year)));
-    const modernObs = cpiCache[cpiCache.length-1];
-    if (!eventObs||!modernObs||eventObs.value==='.'||modernObs.value==='.') return;
-
-    const ratio      = parseFloat(modernObs.value)/parseFloat(eventObs.value);
-    const multiplier = ratio.toFixed(1);
-    const modernYear = modernObs.date.substring(0,4);
-
+    const ev=cpiCache.find(o=>o.date.startsWith(String(year)));
+    const mod=cpiCache[cpiCache.length-1];
+    if (!ev||!mod||ev.value==='.'||mod.value==='.') return;
+    const mult=(parseFloat(mod.value)/parseFloat(ev.value)).toFixed(1);
     appendGoodie(grid,'💰','What It Cost — Then & Now',`
       <div class="money-display">
-        <div class="money-mention">"${currencyMention}"</div>
-        <div class="money-original">as mentioned — ${year}</div>
+        <div class="money-mention">"${mention}"</div>
+        <div class="money-original">as mentioned · ${year}</div>
         <div class="money-arrow">↓</div>
-        <div class="money-modern">≈ ×${multiplier} in ${modernYear} dollars</div>
-        <div class="money-note">×${multiplier} multiplier · FRED CPIAUCSL Series</div>
-      </div>
-      <div class="money-context">Every dollar spent in ${year} had the purchasing power of $${multiplier} today.</div>
-    `,'FRED CPIAUCSL · St. Louis Federal Reserve Bank');
+        <div class="money-modern">≈ ×${mult} in ${mod.date.substring(0,4)}</div>
+        <div class="money-note">FRED CPIAUCSL Series · St. Louis Fed</div>
+      </div>`,'Federal Reserve Bank of St. Louis · FRED');
   } catch {}
 }
 
-// ─── GOODIE: MAP ──────────────────────────────────────────────────────────
+// ─── GOODIE 16: MAP ──────────────────────────────────────────────────
 async function loadMap(grid, coords, keyword, year) {
-  const lat = coords.lat;
-  const lon = coords.lon;
-  const mapId = `leaflet-map-${Date.now()}`;
-  const rumseyQ = encodeURIComponent(keyword);
-
-  // Append card first so we can init Leaflet into it
+  const lat=coords.lat, lon=coords.lon;
+  const mapId=`map-${Date.now()}`;
   const card = goodieCard('🗺','Place on the Map',`
-    <div id="${mapId}" style="height:260px;border-radius:2px;border:1px solid var(--gold)"></div>
+    <div id="${mapId}" style="height:280px;border-radius:2px;border:1px solid var(--gold)"></div>
     <div style="margin-top:8px;display:flex;gap:12px;flex-wrap:wrap">
       <a href="https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}&zoom=8" target="_blank" class="archive-link">OpenStreetMap →</a>
-      <a href="https://www.davidrumsey.com/luna/servlet/view/search?q=${rumseyQ}" target="_blank" class="archive-link">Historical Maps (Rumsey) →</a>
+      <a href="https://www.davidrumsey.com/luna/servlet/view/search?q=${encodeURIComponent(keyword)}" target="_blank" class="archive-link">Historical Maps (Rumsey) →</a>
     </div>
-  `,'OpenStreetMap · Leaflet · David Rumsey Historical Maps');
+  `,'OpenStreetMap · Leaflet.js · David Rumsey Historical Maps');
   grid.appendChild(card);
-
-  // Load Leaflet dynamically
-  if (!window.L) {
-    await Promise.all([
-      loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'),
-      loadCSS('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css')
-    ]);
-  }
-
+  await Promise.all([
+    loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'),
+    loadCSS('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css')
+  ]);
   setTimeout(()=>{
     try {
-      const map = L.map(mapId,{scrollWheelZoom:false}).setView([lat,lon],7);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-        attribution:'© OpenStreetMap',maxZoom:19
-      }).addTo(map);
+      const map=L.map(mapId,{scrollWheelZoom:false}).setView([lat,lon],7);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        {attribution:'© OpenStreetMap',maxZoom:19}).addTo(map);
       L.marker([lat,lon]).addTo(map).bindPopup(`<b>${keyword}</b><br>${year}`).openPopup();
-    } catch(e){ console.error('Leaflet error:',e); }
-  },100);
+    } catch(e){console.error('Leaflet:',e);}
+  },150);
 }
 
-function loadScript(src) {
-  return new Promise(resolve=>{
-    if (document.querySelector(`script[src="${src}"]`)) return resolve();
-    const s = document.createElement('script');
-    s.src = src; s.onload = resolve;
-    document.head.appendChild(s);
-  });
-}
-function loadCSS(href) {
-  return new Promise(resolve=>{
-    if (document.querySelector(`link[href="${href}"]`)) return resolve();
-    const l = document.createElement('link');
-    l.rel='stylesheet'; l.href=href; l.onload=resolve;
-    document.head.appendChild(l);
-  });
-}
-
-// ─── GOODIE: NASA ─────────────────────────────────────────────────────────
+// ─── GOODIE 17: NASA ─────────────────────────────────────────────────
 async function loadNASA(grid, keyword, year) {
   try {
-    const [imgData, apodData] = await Promise.allSettled([
-      fetch(`https://images-api.nasa.gov/search?q=${encodeURIComponent(keyword)}&media_type=image&page_size=4`).then(r=>r.json()),
-      year >= 1995 ? fetch(`/api/nasa/apod`).then(r=>r.json()) : Promise.resolve(null)
-    ]);
-
-    const items = imgData.status==='fulfilled'
-      ? (imgData.value.collection?.items||[]).filter(i=>i.links?.[0]?.href).slice(0,4)
-      : [];
-
-    if (!items.length && !apodData.value) return;
-
-    let html = '';
-    if (apodData.status==='fulfilled' && apodData.value?.url) {
-      html += `<div style="margin-bottom:12px">
-        <img src="${apodData.value.url}" style="width:100%;border-radius:2px;border:1px solid var(--gold)" alt="NASA APOD"/>
-        <div class="image-caption">${apodData.value.title||'NASA Astronomy Picture of the Day'}</div>
-      </div>`;
-    }
-    html += `<div class="images-grid">${items.map(i=>`
+    const data = await fetch(`https://images-api.nasa.gov/search?q=${encodeURIComponent(keyword)}&media_type=image&page_size=4`).then(r=>r.json());
+    const items=(data.collection?.items||[]).filter(i=>i.links?.[0]?.href).slice(0,4);
+    if (!items.length) return;
+    const html=`<div class="images-grid">${items.map(i=>`
       <div class="image-item">
         <img src="${i.links[0].href}" loading="lazy" onerror="this.closest('.image-item').style.display='none'"/>
         <div class="image-caption">${(i.data?.[0]?.title||'NASA').substring(0,60)}</div>
@@ -944,12 +1130,109 @@ async function loadNASA(grid, keyword, year) {
   } catch {}
 }
 
-// ─── RENDER HELPERS ───────────────────────────────────────────────────────
-function musicEpoch(year) {
-  if (year < 1400)  return 'Medieval';
-  if (year < 1600)  return 'Renaissance';
-  if (year < 1750)  return 'Baroque';
-  if (year < 1820)  return 'Classical';
-  if (year < 1910)  return 'Romantic';
-  return null;
+// ═══════════════════════════════════════════════════════════════════════
+// ABOUT SECTION
+// ═══════════════════════════════════════════════════════════════════════
+function showAbout(pushHistory = true) {
+  if (pushHistory) pushState('about');
+  currentView = 'about';
+  const content = document.getElementById('main-content');
+  content.innerHTML = `
+    <div class="about-container">
+      <button class="back-btn" onclick="history.back()">← Back to Events</button>
+
+      <!-- Tab bar -->
+      <div class="about-tabs">
+        <button class="about-tab active" id="tab-pable" onclick="switchAboutTab('pable')">Mr. Pable</button>
+        <button class="about-tab" id="tab-app" onclick="switchAboutTab('app')">About the App</button>
+      </div>
+
+      <!-- MR. PABLE TAB -->
+      <div id="about-pable" class="about-panel">
+        <div class="pable-tribute">
+          <div class="tribute-photo-wrap">
+            <img src="mrpable.webp" alt="William John Pable Jr." class="tribute-photo"
+              onerror="this.parentElement.innerHTML='<div class=\'tribute-photo-placeholder\'>W.P.</div>'"/>
+          </div>
+          <div class="tribute-name">William (Bill) John Pable, Jr.</div>
+          <div class="tribute-dates">September 8, 1940 — October 8, 2025</div>
+          <div class="tribute-titles">
+            Senior Chief Petty Officer, U.S. Navy · U.S. Navy Reserve (20+ years)<br>
+            8th Grade U.S. History & Social Studies · Webster Stanley Middle School, Oshkosh<br>
+            30 years in the classroom · Assistant Principal
+          </div>
+        </div>
+
+        <div class="tribute-bio">
+          <p>Bill Pable was born in Oshkosh, Wisconsin and never really left — not because he had to stay, but because he chose to pour himself into it. He graduated from the University of Wisconsin–Oshkosh with a degree in Elementary Education, earned his Masters from UW–Madison, served his country as a Navy Senior Chief Petty Officer, and then spent thirty years doing what he was built for: teaching.</p>
+
+          <p>His 8th grade U.S. History classroom at Webster Stanley Middle School was not a passive place. He brought Colonial America alive with records, coins, battleground maps, period music, and a stack of assignments he called "Goodies" — thirty pages of immersive work due in three weeks. Overwhelming for some. A challenge the rest of us still remember.</p>
+
+          <p>Outside the classroom, Bill was an avid golfer, an organist and pianist, a fisherman, a Packers fan, and a piano tuner throughout Northeast Wisconsin in retirement. He and his wife Joan — "the neighbor girl" he married in 1968 and kept for 57 years — loved traveling to Europe and Australia, and spent winters as snowbirds in Fort Myers, Florida.</p>
+
+          <p>He passed away on October 8, 2025, after a long illness. He was 85.</p>
+
+          <p>This app is dedicated to him. Pable's Goodies lives on.</p>
+        </div>
+
+        <a href="https://www.thenorthwestern.com/obituaries/pwix1300874" target="_blank" class="tribute-obit-link">
+          Read his obituary in The Northwestern →
+        </a>
+
+        <!-- Paul Harvey section -->
+        <div class="harvey-section">
+          <div class="harvey-header">
+            <div class="harvey-icon">📻</div>
+            <div>
+              <div class="harvey-title">And Now — The Rest of the Story</div>
+              <div class="harvey-sub">Paul Harvey · A classroom favorite of Mr. Pable's</div>
+            </div>
+          </div>
+          <div class="harvey-bio">
+            <p>For decades, Paul Harvey's radio broadcasts reached 24 million listeners a day on more than 1,200 stations. His signature segment — <em>The Rest of the Story</em> — told the hidden backstory behind famous names and events, always ending with the reveal of who you'd been listening to all along.</p>
+            <p>Mr. Pable played Harvey's segments in his classroom. If you've ever heard that voice — that cadence, those deliberate pauses — you understand why a history teacher loved it. Harvey had a gift for making history feel personal, surprising, and just a little miraculous.</p>
+            <p>Harvey described himself as an independent, but his worldview leaned conservative — a conservatism of an earlier era, rooted in patriotism and plain-spoken values, before the word came to mean something different. Mr. Pable shared that sensibility. They both believed in the dignity of the American story, earnestly told.</p>
+          </div>
+          <a href="https://www.youtube.com/watch?v=QiOuE5yeJV0&list=PL1g6RlLtWFQAOdz-jIX0dKhJWhu_4bAcb"
+            target="_blank" class="harvey-playlist-btn">
+            🎙 Listen to Paul Harvey's The Rest of the Story →
+          </a>
+        </div>
+      </div>
+
+      <!-- APP TAB -->
+      <div id="about-app" class="about-panel" style="display:none">
+        <div class="app-about-section">
+          <div class="app-about-logo">
+            <img src="pablemainlogo.png" alt="Pable" style="width:160px;height:auto"/>
+          </div>
+          <h2 class="app-about-title">Pable — The History App Full of Goodies</h2>
+          <p class="app-about-body">Pable is a free, ad-free history app that presents each day's most historically significant events across all of human history — from ancient Rome to the Space Age — with an immersive set of primary sources, images, video, music, books, maps, and archival materials we call Pable's Goodies.</p>
+
+          <h3 class="app-about-subhead">Privacy & Data</h3>
+          <p class="app-about-body">Pable collects no personal data, requires no account, displays no advertisements, and does not track your usage. Events are cached server-side and served to all users identically. No user data is stored, transmitted, or sold. Ever.</p>
+
+          <h3 class="app-about-subhead">Data Sources</h3>
+          <p class="app-about-body">Pable aggregates publicly available data from Wikipedia, the Digital Public Library of America, the Smithsonian Institution, Europeana, NASA, the Library of Congress (Chronicling America), Internet Archive, YouTube, Open Library, Project Gutenberg, MusicBrainz, Open Opus, OCRE, Numista, the St. Louis Fed FRED database, and Merriam-Webster. All content remains the property of its respective sources.</p>
+
+          <h3 class="app-about-subhead">Contact</h3>
+          <p class="app-about-body">
+            Pable is a product of Altruistic Apps.<br>
+            <a href="mailto:contactaltruisticapps@gmail.com" class="archive-link">contactaltruisticapps@gmail.com</a><br>
+            <a href="https://www.altruisticapps.com" target="_blank" class="archive-link">altruisticapps.com →</a>
+          </p>
+
+          <h3 class="app-about-subhead">Terms of Service</h3>
+          <p class="app-about-body">Pable is provided as-is for educational and personal use. Content is sourced from public APIs and is subject to the terms of each respective data provider. Altruistic Apps makes no warranties regarding the accuracy or completeness of third-party content.</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function switchAboutTab(tab) {
+  document.getElementById('about-pable').style.display = tab==='pable' ? 'block' : 'none';
+  document.getElementById('about-app').style.display   = tab==='app'   ? 'block' : 'none';
+  document.getElementById('tab-pable').classList.toggle('active', tab==='pable');
+  document.getElementById('tab-app').classList.toggle('active',   tab==='app');
 }
