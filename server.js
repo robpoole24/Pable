@@ -200,20 +200,13 @@ async function enrichEvents(events) {
       const curated    = getCurated(pageTitle + ' ' + (ev.text||''), peopleNames);
 
       // Build query expansion — multiple search variants for richer API results
-      const pageTitle  = ev.pages?.[0]?.title || '';
       const eventYear  = parseInt(ev.year) || 0;
-      const peopleNames = peopleSummaries.filter(Boolean).map(p => p.name);
 
       // Extract geographic/kingdom terms from full text
       const geoMatches = fullText.match(/\b(Kingdom|Duchy|County|Empire|Republic|Principality|Caliphate|Sultanate|Dynasty)\s+of\s+[A-Z][a-zA-Z\s]{2,20}/g) || [];
       const geoTerms = [...new Set(geoMatches.map(m => m.trim()))].slice(0, 2);
 
       // Era label for broader context searches
-      const eraMap = {
-        ancient: 'Ancient', early_medieval: 'Early Medieval', medieval: 'Medieval',
-        renaissance: 'Renaissance', early_modern: 'Early Modern', modern: 'Modern',
-        early_20c: '20th Century', late_20c: '20th Century', contemporary: ''
-      };
       const getEraLabel = y => {
         if (y < 500) return 'Ancient';
         if (y < 1000) return 'Early Medieval';
