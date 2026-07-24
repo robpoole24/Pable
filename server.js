@@ -3,6 +3,7 @@
    Full article enrichment, entity extraction, coin APIs, midnight cache
    ═══════════════════════════════════════════════════════════════════════ */
 require('dotenv').config();
+const { getCurated } = require('./curation');
 const express = require('express');
 const fetch   = require('node-fetch');
 const cors    = require('cors');
@@ -144,13 +145,19 @@ async function enrichEvents(events) {
         })
       );
 
+      // Attach curated resources (specific chronicles, videos, coins)
+      const pageTitle  = ev.pages?.[0]?.title || '';
+      const peopleNames = peopleSummaries.filter(Boolean).map(p => p.name);
+      const curated    = getCurated(pageTitle + ' ' + (ev.text||''), peopleNames);
+
       return {
         ...ev,
         fullText,
         fullSummary: article?.extract || ev.pages?.[0]?.extract || '',
         entities,
         peopleSummaries: peopleSummaries.filter(Boolean),
-        coordinates: article?.coordinates || ev.pages?.[0]?.coordinates || null
+        coordinates: article?.coordinates || ev.pages?.[0]?.coordinates || null,
+        curated
       };
     } catch { return ev; }
   }));
@@ -197,7 +204,7 @@ async function buildDailyEvents() {
 async function ensureDailyEvents() {
   if (!redis) return;
   const today    = new Date().toISOString().split('T')[0];
-  const cacheKey = `pable:events:v3:${today}`;
+  const cacheKey = `pable:events:v4:${today}`;
   const cached   = await redis.get(cacheKey);
   if (cached) { console.log('Events cached for', today); return; }
   try {
@@ -226,7 +233,7 @@ scheduleMidnightRefresh();
 app.get('/api/events/today', async (req, res) => {
   try {
     const today    = new Date().toISOString().split('T')[0];
-    const cacheKey = `pable:events:v3:${today}`;
+    const cacheKey = `pable:events:v4:${today}`;
     if (redis) {
       const cached = await redis.get(cacheKey);
       if (cached) return res.json(JSON.parse(cached));

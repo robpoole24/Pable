@@ -210,6 +210,7 @@ function openEvent(ev, pushHistory = true) {
       </div>
       <button class="back-btn" id="back-btn">← All Events</button>
       <div class="event-summary">
+        ${ev.curated?.context ? `<div class="curated-context">${ev.curated.context}</div>` : ''}
         ${paragraphs.map(p=>`<p>${p}</p>`).join('')}
         ${wikiUrl ? `<a class="wiki-link" href="${wikiUrl}" target="_blank">Full Wikipedia article →</a>` : ''}
       </div>
@@ -221,7 +222,7 @@ function openEvent(ev, pushHistory = true) {
             const r=i*30*Math.PI/180;
             return `<line x1="${(45+42*Math.cos(r)).toFixed(1)}" y1="${(45+42*Math.sin(r)).toFixed(1)}" x2="${(45+35*Math.cos(r+.26)).toFixed(1)}" y2="${(45+35*Math.sin(r+.26)).toFixed(1)}" stroke="#C0392B" stroke-width="1" opacity="0.4"/>`;
           }).join('')}
-          <text x="45" y="55" text-anchor="middle" font-family="'USDeclaration',cursive,serif" font-size="34" fill="#F8F2E6">P</text>
+          <text x="45" y="58" text-anchor="middle" dominant-baseline="middle" font-family="'USDeclaration',cursive,serif" font-size="30" fill="#F8F2E6">P</text>
         </svg>
         <div class="seal-label" id="seal-label">Break the Seal · Open the Goodies</div>
       </div>
@@ -273,6 +274,9 @@ async function loadAllGoodies(ev) {
   const currencyMention = extractCurrencyMention(fullText);
   const archaicTerms    = extractArchaicTerms(title+' '+fullText);
 
+  // Curated resources — handcrafted for specific events
+  const curated = ev.curated || { videos: [], books: [], coins: [], context: null };
+
   // Key figure names from the event title (first 2-3 proper nouns)
   const titlePeople = entities.people?.slice(0,3) || [];
   // Build fallback YouTube queries
@@ -287,14 +291,16 @@ async function loadAllGoodies(ev) {
 
   // Fire all in parallel — each appends itself when ready
   const loaders = [
+    // 0. Curated videos (specific known videos for this event)
+    curated.videos?.length ? loadCuratedVideos(grid, curated.videos) : null,
     // 1. Key figures dossiers (people cards)
     people.length ? loadPeopleDossiers(grid, people, year) : null,
     // 2. Images (includes Met Museum)
     loadImages(grid, keyword, year, isSpace, titlePeople),
     // 2b. Met Museum dedicated goodie — arms & armor, coins, manuscripts, artifacts
     loadMetArtifacts(grid, keyword, year, titlePeople),
-    // 3. Coins (if ancient/medieval ruler involved)
-    (isRoman || isMedieval) ? loadCoins(grid, keyword, titlePeople, isRoman) : null,
+    // 3. Coins (if ancient/medieval ruler involved, or curated coins exist)
+    (isRoman || isMedieval || curated.coins?.length) ? loadCoins(grid, keyword, titlePeople, isRoman, curated.coins) : null,
     // 4. YouTube documentaries (layered queries)
     loadYouTubeDocs(grid, keyword, fallbackQuery1, fallbackQuery2),
     // 5. YouTube news (post-1950)
@@ -315,8 +321,8 @@ async function loadAllGoodies(ev) {
     loadLifeAndSociety(grid, keyword, year, fullText),
     // 13. Music
     loadMusic(grid, year, keyword),
-    // 14. Books
-    loadBooks(grid, keyword, title, titlePeople, year),
+    // 14. Books (API results + curated known works)
+    loadBooks(grid, keyword, title, titlePeople, year, curated.books),
     // 15. Inflation (only if currency mentioned)
     currencyMention ? loadInflation(grid, currencyMention, year) : null,
     // 16. Map
@@ -609,9 +615,32 @@ async function loadMetArtifacts(grid, keyword, year, people=[]) {
     'The Metropolitan Museum of Art · Public Domain · metmuseum.org');
 }
 
+// ─── GOODIE 0: CURATED VIDEOS ────────────────────────────────────────
+// Specific known videos for this event — always shown when matched
+async function loadCuratedVideos(grid, videos) {
+  if (!videos?.length) return;
+  const html = videos.map(v => `
+    <a href="https://youtube.com/watch?v=${v.id}" target="_blank" class="video-item">
+      <img class="video-thumb-img"
+        src="https://img.youtube.com/vi/${v.id}/mqdefault.jpg"
+        alt="${v.title}" onerror="this.style.display='none'"/>
+      <div>
+        <div class="video-title">${v.title}</div>
+        <div class="video-channel">${v.channel}</div>
+        <div class="video-source">YouTube · ${v.type === 'short' ? 'Short' : v.type === 'speech' ? 'Primary Source' : 'Documentary'}</div>
+      </div>
+    </a>`).join('');
+  appendGoodie(grid, '🎬', 'Video — This Event', html, 'YouTube · Curated');
+}
+
 // ─── GOODIE 3: COINS ─────────────────────────────────────────────────
-async function loadCoins(grid, keyword, people=[], isRoman=false) {
+async function loadCoins(grid, keyword, people=[], isRoman=false, curatedCoins=[]) {
   const coinImages = [];
+
+  // 0. Curated coins — specific known coins for this event (highest priority)
+  if (curatedCoins?.length) {
+    curatedCoins.forEach(c => coinImages.push(c));
+  }
 
   // 1. Numista API — primary coin source
   // Response: { count, types: [{ id, title, issuer:{name}, min_year, max_year,
@@ -989,8 +1018,16 @@ async function loadMusic(grid, year, keyword) {
 }
 
 // ─── GOODIE 14: BOOKS ────────────────────────────────────────────────
-async function loadBooks(grid, keyword, eventTitle, people=[], year=0) {
+async function loadBooks(grid, keyword, eventTitle, people=[], year=0, curatedBooks=[]) {
   const books = [], seen = new Set();
+
+  // 0. Curated books — specific known works for this event (always shown first)
+  if (curatedBooks?.length) {
+    curatedBooks.forEach(b => {
+      seen.add(b.title?.toLowerCase());
+      books.push({ ...b, source: 'Curated' });
+    });
+  }
 
   // Build targeted queries: specific event + key figures + era
   const queries = [
