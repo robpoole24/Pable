@@ -1,26 +1,35 @@
 /* ═══════════════════════════════════════════════════════════════════════
    PABLE — curation.js
-   
    Handcrafted resources for specific historical events.
-   Keyed by Wikipedia page title (exact match or substring).
-   These supplement API results — they always appear when the event matches.
-   
-   Add entries here when:
-   - A specific primary source chronicle exists for the event
-   - A known YouTube video covers the event well
-   - A specific book is the definitive work on the topic
-   - A known coin or artifact should be surfaced
+   Keyed by Wikipedia page title or event text (case-insensitive substring).
    ═══════════════════════════════════════════════════════════════════════ */
 
 const CURATED = [
 
   // ── Battle of Nocera, 1132 ────────────────────────────────────────────
   {
-    match: ['Battle of Nocera', 'Nocera', 'Roger II of Sicily', 'Ranulf II'],
+    match: ['Battle of Nocera', 'Ranulf II of Alife'],
+    people: [
+      {
+        name: 'Roger II of Sicily',
+        role: 'King of Sicily · Norman ruler and military commander',
+        wikiTitle: 'Roger_II_of_Sicily'
+      },
+      {
+        name: 'Ranulf II, Count of Alife',
+        role: 'Leader of the baronial rebellion against Roger II',
+        wikiTitle: 'Ranulf_II,_Count_of_Alife'
+      },
+      {
+        name: 'Robert II of Capua',
+        role: 'Prince of Capua · Allied rebel commander',
+        wikiTitle: 'Robert_II_of_Capua'
+      }
+    ],
     videos: [
       {
         id: 'iONwQ4Nu5_8',
-        title: 'Battle of Nocera — Roger II of Sicily',
+        title: 'The Battle of Nocera — Roger II of Sicily',
         channel: 'History Short',
         type: 'short'
       },
@@ -36,76 +45,61 @@ const CURATED = [
         title: 'The History of the Most Serene Roger, First King of Sicily',
         author: 'Alexander of Telese (trans. Graham A. Loud)',
         type: 'Primary Source Chronicle',
-        note: 'Written under Roger II\'s patronage — details his early mainland campaigns including the 1132 setback at Nocera.',
+        note: 'Written under Roger II\'s patronage. Details his early mainland campaigns including the 1132 defeat at Nocera.',
         url: 'https://www.manchesterhive.com/display/9781526112750/9781526112750.00009.xml'
       },
       {
         title: 'Chronicle of Falco of Benevento (Chronicon Beneventanum)',
         author: 'Falco of Benevento',
         type: 'Primary Source Chronicle',
-        note: 'Written by a contemporary notary from nearby Benevento — an unsparing local perspective on the civil wars and Roger II\'s defeat.',
+        note: 'Written by a contemporary notary from nearby Benevento. An unsparing local perspective on Roger II\'s defeat.',
         url: null
       },
       {
         title: 'Roger II and the Creation of the Kingdom of Sicily',
         author: 'Graham A. Loud',
         type: 'Non-Fiction',
-        note: 'The scholarly standard. Deep analysis of the political landscape, baronial revolts, and military engagements like Nocera.',
+        note: 'The scholarly standard. Deep analysis of the baronial revolts and military engagements including Nocera.',
         url: 'https://openlibrary.org/search?q=Roger+II+Kingdom+Sicily+Loud'
       },
       {
         title: 'The Normans in Sicily',
         author: 'John Julius Norwich',
         type: 'Non-Fiction',
-        note: 'Narrative history of the Hauteville family and the intense struggle between Roger II and his rebellious vassals.',
+        note: 'Narrative history of the Hauteville dynasty and the struggle between Roger II and his vassals.',
         url: 'https://openlibrary.org/search?q=Normans+Sicily+Norwich'
       }
     ],
     coins: [
       {
-        url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/52/Roger_II_Ducalis.jpg/320px-Roger_II_Ducalis.jpg',
-        caption: 'Roger II Ducalis — gold coin of Roger II of Sicily',
+        url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e3/Roger_II_tari_gold_coin_Palermo_with_Arabic_inscriptions.jpg/320px-Roger_II_tari_gold_coin_Palermo_with_Arabic_inscriptions.jpg',
+        caption: 'Gold Tari of Roger II of Sicily, minted Palermo, 1130–1154. Arabic inscription: "King Roger the Magnificent, powerful through Allah." Reverse: Greek "IC XC NI KA" (Jesus Christ Conquers).',
         source: 'Wikimedia Commons'
       },
       {
-        url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b8/Tari_of_Roger_II_of_Sicily.jpg/320px-Tari_of_Roger_II_of_Sicily.jpg',
-        caption: 'Tari of Roger II — gold quarter-dinar, minted in Sicily',
+        url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7f/Normanni%2C_emissioni_in_argento_o_bronzo%2C_118_ducale_di_ruggero_II%2C_zecca_di_palermo%2C_con_pantocrator%2C_1140-1154.jpg/320px-Normanni%2C_emissioni_in_argento_o_bronzo%2C_118_ducale_di_ruggero_II%2C_zecca_di_palermo%2C_con_pantocrator%2C_1140-1154.jpg',
+        caption: 'Silver Ducalis of Roger II — Byzantine-style cup-shaped coin, Palermo mint, 1140–1154. Obverse: Christ Pantocrator. The ducalis was the first coin of its type in western Europe.',
+        source: 'Wikimedia Commons'
+      },
+      {
+        url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a8/Palermo%2C_ducalis_di_ruggiero_II_d%27altavilla%2C_1130-1154.JPG/320px-Palermo%2C_ducalis_di_ruggiero_II_d%27altavilla%2C_1130-1154.JPG',
+        caption: 'Ducalis of Roger II d\'Altavilla, Palermo, 1130–1154. The reverse shows Roger II and his son standing — an assertion of dynastic legitimacy.',
         source: 'Wikimedia Commons'
       }
     ],
-    context: `The Battle of Nocera was fought on July 24, 1132, near the city of Nocera dei Pagani in southern Italy. Roger II of Sicily, attempting to consolidate Norman control over the Italian mainland, faced a coalition of rebellious barons led by Count Ranulf II of Alife and Prince Robert II of Capua. The rebels, supported by Pope Innocent II's rival claimant Anacletus II, massed their forces near Benevento. Roger marched his royal army to relieve Nocera, but was decisively defeated — one of only two major military reverses of his reign. The defeat forced Roger to temporarily withdraw to Sicily, but he would return within years to crush the rebellion and establish the unified Kingdom of Sicily in 1130, one of medieval Europe's most sophisticated states.`
+    context: `The Battle of Nocera was fought on July 24, 1132, near Nocera dei Pagani in southern Italy. Roger II of Sicily — brilliant, multilingual, and ruling one of medieval Europe's most sophisticated states — faced a coalition of rebellious Norman barons led by Count Ranulf II of Alife and Prince Robert II of Capua, backed by Pope Innocent II's rival claimant Anacletus II. The rebels massed near Benevento while Roger marched his royal army north. At Nocera, Roger was decisively defeated — one of only two major military reverses of his entire reign. He withdrew to Sicily, but returned within years to crush the rebellion. By 1139, Roger II stood undisputed ruler of a unified kingdom stretching from Sicily to Naples, encompassing Norman, Arab, Greek, and Jewish populations in a state of extraordinary cultural sophistication.`
   },
 
-  // ── Apollo 11 Moon Landing ────────────────────────────────────────────
+  // ── Apollo 11 ─────────────────────────────────────────────────────────
   {
     match: ['Apollo 11', 'Moon landing', 'Neil Armstrong'],
     videos: [
-      { id: 'hqI3goW3BZU', title: 'We Choose to Go to the Moon — JFK Full Speech', channel: 'NASA', type: 'speech' },
+      { id: 'hqI3goW3BZU', title: 'JFK — We Choose to Go to the Moon (Full Speech)', channel: 'NASA', type: 'speech' },
       { id: 'S9HdPi9Ikhk', title: 'Apollo 11: One Giant Leap for Mankind', channel: 'National Geographic', type: 'documentary' }
     ],
     books: [
-      { title: 'First Man: The Life of Neil A. Armstrong', author: 'James R. Hansen', type: 'Non-Fiction', note: 'The authorized biography — basis for the 2018 film.', url: 'https://openlibrary.org/search?q=First+Man+Neil+Armstrong+Hansen' },
-      { title: 'Carrying the Fire', author: 'Michael Collins', type: 'Non-Fiction', note: 'Widely considered the best astronaut memoir ever written.', url: 'https://openlibrary.org/search?q=Carrying+Fire+Collins+astronaut' }
-    ]
-  },
-
-  // ── Boston Massacre ───────────────────────────────────────────────────
-  {
-    match: ['Boston Massacre'],
-    videos: [
-      { id: 'Tz1B7ZMGJXA', title: 'The Boston Massacre — History', channel: 'History Channel', type: 'documentary' }
-    ],
-    books: [
-      { title: 'John Adams', author: 'David McCullough', type: 'Non-Fiction', note: 'The massacre trial is covered in gripping detail.', url: 'https://openlibrary.org/search?q=John+Adams+McCullough' },
-      { title: 'April Morning', author: 'Howard Fast', type: 'Fiction', note: 'A 15-year-old witnesses the Revolution — fast, visceral, historically careful.', url: 'https://openlibrary.org/search?q=April+Morning+Howard+Fast' }
-    ]
-  },
-
-  // ── Magna Carta ───────────────────────────────────────────────────────
-  {
-    match: ['Magna Carta'],
-    books: [
-      { title: 'Magna Carta', author: 'David Starkey', type: 'Non-Fiction', note: 'The definitive popular history of the document and its legacy.', url: 'https://openlibrary.org/search?q=Magna+Carta+Starkey' }
+      { title: 'First Man: The Life of Neil A. Armstrong', author: 'James R. Hansen', type: 'Non-Fiction', note: 'The authorized biography.', url: 'https://openlibrary.org/search?q=First+Man+Neil+Armstrong' },
+      { title: 'Carrying the Fire', author: 'Michael Collins', type: 'Non-Fiction', note: 'Widely considered the finest astronaut memoir ever written.', url: 'https://openlibrary.org/search?q=Carrying+Fire+Collins' }
     ]
   },
 
@@ -113,9 +107,8 @@ const CURATED = [
   {
     match: ['Julius Caesar', 'Assassination of Julius Caesar', 'Ides of March'],
     books: [
-      { title: 'The Gallic War (Commentarii de Bello Gallico)', author: 'Julius Caesar', type: 'Primary Source — Free to Read', note: 'Caesar\'s own account of his campaigns. Translated text freely available.', url: 'https://www.gutenberg.org/ebooks/10657' },
-      { title: 'Caesar: A Biography', author: 'Christian Meier', type: 'Non-Fiction', note: 'The scholarly standard on Caesar\'s life and political world.', url: 'https://openlibrary.org/search?q=Caesar+Biography+Meier' },
-      { title: 'Parallel Lives (Life of Caesar)', author: 'Plutarch', type: 'Primary Source — Free to Read', note: 'Plutarch\'s biography written 100 years after Caesar\'s death. Foundational.', url: 'https://www.gutenberg.org/ebooks/674' }
+      { title: 'Commentarii de Bello Gallico (Gallic Wars)', author: 'Julius Caesar', type: 'Primary Source — Free to Read', url: 'https://www.gutenberg.org/ebooks/10657', note: 'Caesar\'s own account of his campaigns — one of the greatest military memoirs ever written.' },
+      { title: 'Parallel Lives — Life of Caesar', author: 'Plutarch', type: 'Primary Source — Free to Read', url: 'https://www.gutenberg.org/ebooks/674', note: 'Foundational biography written 100 years after Caesar\'s death.' }
     ]
   },
 
@@ -123,28 +116,18 @@ const CURATED = [
   {
     match: ['Alexander the Great', 'Alexander III of Macedon'],
     books: [
-      { title: 'Anabasis of Alexander', author: 'Arrian', type: 'Primary Source — Free to Read', note: 'The most reliable ancient account of Alexander\'s campaigns, written by a Greek historian.', url: 'https://www.gutenberg.org/ebooks/46976' },
-      { title: 'Alexander the Great', author: 'Robin Lane Fox', type: 'Non-Fiction', note: 'Still the gold standard popular biography, 50 years on.', url: 'https://openlibrary.org/search?q=Alexander+Great+Robin+Lane+Fox' }
+      { title: 'Anabasis of Alexander', author: 'Arrian', type: 'Primary Source — Free to Read', url: 'https://www.gutenberg.org/ebooks/46976', note: 'The most reliable ancient account of Alexander\'s campaigns.' },
+      { title: 'Alexander the Great', author: 'Robin Lane Fox', type: 'Non-Fiction', url: 'https://openlibrary.org/search?q=Alexander+Great+Robin+Lane+Fox', note: 'The gold standard popular biography.' }
     ]
   }
-
 ];
 
-/**
- * Find curated resources for a given event.
- * @param {string} eventTitle - The Wikipedia page title or event text
- * @param {string[]} peopleNames - Key figure names extracted from the event
- * @returns {object} - { videos, books, coins, context } — any may be empty/null
- */
 function getCurated(eventTitle, peopleNames = []) {
   const searchText = [eventTitle, ...peopleNames].join(' ').toLowerCase();
-  
   for (const entry of CURATED) {
-    const matched = entry.match.some(term => 
-      searchText.includes(term.toLowerCase())
-    );
-    if (matched) {
+    if (entry.match.some(term => searchText.includes(term.toLowerCase()))) {
       return {
+        people:  entry.people  || [],
         videos:  entry.videos  || [],
         books:   entry.books   || [],
         coins:   entry.coins   || [],
@@ -152,7 +135,7 @@ function getCurated(eventTitle, peopleNames = []) {
       };
     }
   }
-  return { videos: [], books: [], coins: [], context: null };
+  return { people: [], videos: [], books: [], coins: [], context: null };
 }
 
 module.exports = { getCurated };

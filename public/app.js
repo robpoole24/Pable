@@ -102,7 +102,6 @@ function renderApp() {
     <div class="pable-root">
       <div class="pable-header">
         <div class="pable-header-eyebrow">
-          <span>A Living History</span>
           <button class="about-btn" onclick="showAbout()">About</button>
         </div>
         <h1 class="pable-wordmark">Pable</h1>
@@ -293,8 +292,8 @@ async function loadAllGoodies(ev) {
   const loaders = [
     // 0. Curated videos (specific known videos for this event)
     curated.videos?.length ? loadCuratedVideos(grid, curated.videos) : null,
-    // 1. Key figures dossiers (people cards)
-    people.length ? loadPeopleDossiers(grid, people, year) : null,
+    // 1. Key figures dossiers (people cards) — curated first, API fallback
+    loadPeopleDossiers(grid, people, year, curated.people),
     // 2. Images (includes Met Museum)
     loadImages(grid, keyword, year, isSpace, titlePeople),
     // 2b. Met Museum dedicated goodie — arms & armor, coins, manuscripts, artifacts
@@ -392,24 +391,82 @@ function loadCSS(href) {
 }
 
 // ─── GOODIE 1: KEY FIGURES ────────────────────────────────────────────
-async function loadPeopleDossiers(grid, people, year) {
+// Uses curated people list when available; falls back to API entity extraction
+// Filters strictly to human figures — never shows places or objects
+async function loadPeopleDossiers(grid, people, year, curatedPeople=[]) {
+  // If we have curated people definitions, fetch their Wikipedia summaries
+  if (curatedPeople?.length) {
+    const fetched = await Promise.all(curatedPeople.map(async p => {
+      try {
+        const res = await fetch(
+          `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(p.wikiTitle)}`,
+          { headers: { 'User-Agent': 'PableHistoryApp/3.0 (educational; robpoole24@gmail.com)' } }
+        ).then(r => r.json());
+        if (res.type === 'disambiguation' || !res.extract) return null;
+        // Only show if Wikipedia confirms this is a person
+        const desc = (res.description || '').toLowerCase();
+        const isPerson = /king|queen|emperor|count|duke|prince|general|pope|sultan|president|founder|commander|lord|earl|baron|knight|ruler|monarch|leader|minister|chancellor|bishop|archbishop|cardinal|tsar|pharaoh|caliph|vizier|senator|consul|tribune|knight/.test(desc);
+        if (!isPerson && !p.role) return null;
+        return {
+          name: res.title,
+          role: p.role || res.description || '',
+          extract: res.extract?.substring(0, 350) || '',
+          thumbnail: res.thumbnail?.source || null,
+          url: res.content_urls?.desktop?.page || null
+        };
+      } catch { return null; }
+    }));
+    const valid = fetched.filter(Boolean);
+    if (valid.length) {
+      const html = valid.map(p => `
+        <div class="person-card">
+          ${p.thumbnail
+            ? `<img class="person-portrait" src="${p.thumbnail}" alt="${p.name}" onerror="this.style.display='none'"/>`
+            : '<div class="person-portrait-placeholder">👤</div>'}
+          <div class="person-info">
+            <div class="person-name">${p.name}</div>
+            <div class="person-role">${p.role}</div>
+            <div class="person-extract">${p.extract}</div>
+            ${p.url ? `<a href="${p.url}" target="_blank" class="archive-link">Wikipedia →</a>` : ''}
+          </div>
+        </div>`).join('');
+      appendGoodie(grid, '👑', 'Key Figures', html, 'Wikipedia');
+      return;
+    }
+  }
+
+  // Fallback: API-extracted people — filter strictly to humans
   if (!people.length) return;
-  const html = people.map(p => `
+  const PLACE_WORDS = /comune|municipality|city|town|village|country|region|district|province|county|kingdom|empire|battle|island|mountain|river|sea|ocean|war|island/i;
+  const PERSON_WORDS = /king|queen|count|duke|prince|emperor|general|sultan|pope|ruler|president|founder|commander|lord|baron|leader|minister|bishop|archbishop|tsar|pharaoh|caliph|senator|consul|knight/i;
+  const humanPeople = people.filter(p =>
+    PERSON_WORDS.test(p.extract || '') && !PLACE_WORDS.test(p.extract?.split('.')[0] || '')
+  ).slice(0, 3);
+  if (!humanPeople.length) return;
+
+  const html = humanPeople.map(p => `
     <div class="person-card">
-      ${p.thumbnail ? `<img class="person-portrait" src="${p.thumbnail}" alt="${p.name}" onerror="this.style.display='none'"/>` : '<div class="person-portrait-placeholder">👤</div>'}
+      ${p.thumbnail
+        ? `<img class="person-portrait" src="${p.thumbnail}" alt="${p.name}" onerror="this.style.display='none'"/>`
+        : '<div class="person-portrait-placeholder">👤</div>'}
       <div class="person-info">
         <div class="person-name">${p.name}</div>
         <div class="person-extract">${p.extract || ''}</div>
         ${p.url ? `<a href="${p.url}" target="_blank" class="archive-link">Wikipedia →</a>` : ''}
       </div>
     </div>`).join('');
-  appendGoodie(grid,'👑','Key Figures',html,'Wikipedia');
+  appendGoodie(grid, '👑', 'Key Figures', html, 'Wikipedia');
 }
 
 // ─── GOODIE 2: IMAGES ─────────────────────────────────────────────────
 async function loadImages(grid, keyword, year, isSpace, people=[]) {
   const images = [];
-  const queries = [keyword, ...people.slice(0,2)];
+  // Use specific figure names for medieval/ancient events — NOT the battle name
+  // "Roger II of Sicily" returns relevant images; "Battle of Nocera" returns generic war images
+  const isOldEvent = parseInt(year) < 1900;
+  const queries = isOldEvent && people.length
+    ? [...people.slice(0,2), keyword]   // figures first for old events
+    : [keyword, ...people.slice(0,2)];  // event first for modern events
 
   const [wikiRes, dplaRes, siRes, euroRes] = await Promise.allSettled([
     Promise.all(queries.map(q => fetchWikimediaImages(q))),
@@ -779,7 +836,7 @@ async function loadArchiveAudio(grid, keyword) {
       <div class="audio-item">
         <div class="audio-title">${(a.title||'Untitled').substring(0,80)}</div>
         ${a.audioUrl
-          ? `<audio controls preload="none" style="width:100%;margin-top:6px"><source src="${a.audioUrl}"></audio>`
+          ? `<audio controls preload="metadata" style="width:100%;margin-top:6px" crossorigin="anonymous"><source src="${a.audioUrl}" type="audio/mpeg"><source src="${a.audioUrl}"></audio>`
           : `<a href="https://archive.org/details/${a.identifier}" target="_blank" class="archive-link">Listen on archive.org →</a>`}
       </div>`).join('');
     appendGoodie(grid,'🔊','Voices & Recordings',html,'Internet Archive (archive.org)');
@@ -811,13 +868,19 @@ async function loadNewspapers(grid, keyword, year) {
 
 // ─── GOODIE 9: PRIMARY SOURCES ───────────────────────────────────────
 async function loadPrimarySources(grid, keyword, year, people=[]) {
-  const queries = [keyword, ...people.slice(0,2)];
+  // For old events, search by figure names — much more accurate than event keyword
+  // "Roger II" → real primary sources; "Battle of Nocera" → generic battle books
+  const primaryQueries = people.length
+    ? [...people.slice(0,2), ...keyword.split(' ').slice(0,2)]
+    : keyword.split(' ').slice(0,3);
+  const queries = [...new Set(primaryQueries)].slice(0,3);
+
   const books = [];
   const seen  = new Set();
 
   for (const q of queries) {
     try {
-      const data = await fetch(`https://gutendex.com/books/?search=${encodeURIComponent(q)}&topic=history`).then(r=>r.json());
+      const data = await fetch(`https://gutendex.com/books/?search=${encodeURIComponent(q)}`).then(r=>r.json());
       (data.results||[]).forEach(b=>{
         if(seen.has(b.id)) return; seen.add(b.id);
         books.push({
@@ -989,7 +1052,7 @@ async function loadMusic(grid, year, keyword) {
             <div class="music-composer">${epoch} · ${c.birth?.substring(0,4)||'?'}–${c.death?.substring(0,4)||'present'}</div>
             ${c.audioUrl
               ? `<div class="audio-label">${(c.audioTitle||'').substring(0,60)}</div>
-                 <audio controls preload="none" style="width:100%;margin-top:4px"><source src="${c.audioUrl}"></audio>`
+                 <audio controls preload="metadata" style="width:100%;margin-top:4px" crossorigin="anonymous"><source src="${c.audioUrl}" type="audio/mpeg"><source src="${c.audioUrl}"></audio>`
               : c.archiveId
                 ? `<a href="https://archive.org/details/${c.archiveId}" target="_blank" class="archive-link">Listen on archive.org →</a>`
                 : `<div class="music-note">Search IMSLP.org for free scores</div>`}
@@ -1029,12 +1092,13 @@ async function loadBooks(grid, keyword, eventTitle, people=[], year=0, curatedBo
     });
   }
 
-  // Build targeted queries: specific event + key figures + era
-  const queries = [
-    keyword,
-    ...people.slice(0,2),
-    year < 1600 ? `${keyword.split(' ').slice(0,3).join(' ')} medieval history` : null,
-  ].filter(Boolean);
+  // Build targeted queries using figure names for old events
+  // This prevents "Battle of X" returning generic "battle" books
+  const isAncient = parseInt(year) < 1800;
+  const bookQueries = isAncient && people.length
+    ? [...people.slice(0,2), ...keyword.split(' ').slice(0,2)]
+    : [keyword, ...people.slice(0,1)];
+  const queries = [...new Set(bookQueries)].filter(Boolean);
 
   for (const q of queries) {
     // Open Library
