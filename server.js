@@ -287,7 +287,7 @@ async function buildDailyEvents() {
 async function ensureDailyEvents() {
   if (!redis) return;
   const today    = new Date().toISOString().split('T')[0];
-  const cacheKey = `pable:events:v7:${today}`;
+  const cacheKey = `pable:events:v8:${today}`;
   const cached   = await redis.get(cacheKey);
   if (cached) { console.log('Events cached for', today); return; }
   try {
@@ -316,7 +316,7 @@ scheduleMidnightRefresh();
 app.get('/api/events/today', async (req, res) => {
   try {
     const today    = new Date().toISOString().split('T')[0];
-    const cacheKey = `pable:events:v7:${today}`;
+    const cacheKey = `pable:events:v8:${today}`;
     if (redis) {
       const cached = await redis.get(cacheKey);
       if (cached) return res.json(JSON.parse(cached));
@@ -537,7 +537,7 @@ app.post('/api/cache/clear', async (req, res) => {
     const now = new Date(), midnight = new Date(now);
     midnight.setHours(24,0,0,0);
     const ttl = Math.floor((midnight-now)/1000);
-    await redis.setEx(`pable:events:v7:${today}`, ttl, JSON.stringify(events));
+    await redis.setEx(`pable:events:v8:${today}`, ttl, JSON.stringify(events));
     res.json({ ok: true, built: events.length, ttl });
   } catch (e) {
     res.status(500).json({ error: e.message });

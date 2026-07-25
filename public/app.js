@@ -55,6 +55,27 @@ const STOP_WORDS = new Set([
 document.addEventListener('DOMContentLoaded', () => {
   loadTodayEvents();
 
+  // Global image lightbox — click any .image-item img to view full size
+  document.body.addEventListener('click', e => {
+    const img = e.target.closest('.image-item img') || e.target.closest('.met-img');
+    if (!img) return;
+    const modal = document.createElement('div');
+    modal.className = 'lightbox-modal';
+    modal.innerHTML = `
+      <div class="lightbox-backdrop"></div>
+      <div class="lightbox-content">
+        <img src="${img.src}" alt="${img.alt}" class="lightbox-img"/>
+        <div class="lightbox-caption">${img.alt || img.closest('.image-item')?.querySelector('.image-caption')?.textContent || ''}</div>
+        <button class="lightbox-close" aria-label="Close">✕</button>
+      </div>`;
+    document.body.appendChild(modal);
+    requestAnimationFrame(() => modal.classList.add('lightbox-open'));
+    const close = () => { modal.classList.remove('lightbox-open'); setTimeout(()=>modal.remove(), 300); };
+    modal.querySelector('.lightbox-close').addEventListener('click', close);
+    modal.querySelector('.lightbox-backdrop').addEventListener('click', close);
+    document.addEventListener('keydown', function esc(e) { if(e.key==='Escape'){close();document.removeEventListener('keydown',esc);} });
+  });
+
   // Browser back/forward button support
   window.addEventListener('popstate', e => {
     const state = e.state || { view: 'list' };
@@ -112,7 +133,7 @@ function renderApp() {
         </div>
         <h1 class="pable-wordmark">Pable</h1>
       </div>
-      <div class="pable-date-banner">This Day in History — ${monthName} ${day}, ${year}</div>
+      <div class="pable-date-banner">This Day in History — ${monthName} ${day}</div>
       <div id="main-content"></div>
     </div>
   `;
@@ -262,7 +283,12 @@ function breakSeal() {
     wrap.style.transform   = 'scale(0.85) translateY(-8px)';
     label.style.transition = 'opacity 0.3s ease';
     label.style.opacity    = '0';
-    setTimeout(() => loadAllGoodies(selectedEvent), 450);
+    setTimeout(() => {
+      // Collapse seal area completely — no gap
+      const wrapper = document.querySelector('.seal-wrapper');
+      if (wrapper) wrapper.style.display = 'none';
+      loadAllGoodies(selectedEvent);
+    }, 500);
   }, 3000); // exactly matches GIF duration
 }
 
@@ -319,21 +345,26 @@ async function loadAllGoodies(ev) {
     curated.videos?.length ? loadCuratedVideos(grid, curated.videos) : null,
     // 1. Key figures dossiers (people cards) — curated first, API fallback
     loadPeopleDossiers(grid, people, year, curated.people),
-    // 2. Images — use curated people names for precision
-    loadImages(grid, keyword, year, isSpace, queryPeople),
+    // 2. Images — use full page title + specific figure names
+    loadImages(grid, keyword, year, isSpace, queryPeople.map(n => n.includes(' ') ? n : keyword)),
     // 2b. Met Museum dedicated goodie
     loadMetArtifacts(grid, keyword, year, queryPeople),
     // 3. Coins — curated coins first, then API with curated people names
     (isRoman || isMedieval || curated.coins?.length) ? loadCoins(grid, keyword, queryPeople, isRoman, curated.coins) : null,
     // 4. YouTube documentaries (layered queries)
-    // YouTube gets full query expansion for best coverage
-    loadYouTubeDocs(grid, queryExpansion[0]||keyword, queryExpansion[1]||fallbackQuery1, queryExpansion[2]||fallbackQuery2),
+    // YouTube — use all query expansion variants for maximum coverage
+    loadYouTubeDocs(grid,
+      queryExpansion[0] || keyword,
+      queryExpansion[1] || fallbackQuery1,
+      queryExpansion[2] || fallbackQuery2,
+      queryExpansion[3] || null
+    ),
     // 5. YouTube news (post-1950)
     hasNewsVideo ? loadYouTubeNews(grid, keyword, fallbackQuery1) : null,
-    // 6. Internet Archive video
-    loadArchiveVideo(grid, keyword),
-    // 7. Audio (post-1877)
-    hasRecording ? loadArchiveAudio(grid, keyword) : null,
+    // 6. Internet Archive video — use full query expansion
+    loadArchiveVideo(grid, keyword, queryExpansion),
+    // 7. Audio (post-1877) — use query expansion for better results
+    hasRecording ? loadArchiveAudio(grid, keyword, queryExpansion) : null,
     // 8. Historic newspapers (1770–1963)
     hasNewspaper ? loadNewspapers(grid, keyword, year) : null,
     // 9. Primary sources / chronicles (pre-1600)
@@ -341,7 +372,8 @@ async function loadAllGoodies(ev) {
     // 10. Etymology (archaic terms only)
     archaicTerms.length ? loadEtymology(grid, archaicTerms) : null,
     // 11. Thesaurus
-    archaicTerms.length ? loadThesaurus(grid, archaicTerms[0]) : null,
+    // Thesaurus only for words in our archaic set (not modern common words)
+    (archaicTerms.length && ARCHAIC_WORDS.has(archaicTerms[0])) ? loadThesaurus(grid, archaicTerms[0]) : null,
     // 12. Life & Society context
     loadLifeAndSociety(grid, keyword, year, fullText, curatedPeopleNames),
     // 13. Music
@@ -553,7 +585,13 @@ async function fetchWikimediaImages(keyword) {
     const q = encodeURIComponent(keyword);
     const data = await fetch(`https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${q}&gsrnamespace=6&prop=imageinfo&iiprop=url|extmetadata&iiurlwidth=400&format=json&origin=*&gsrlimit=8`).then(r=>r.json());
     return Object.values(data.query?.pages||{})
-      .filter(p=>p.imageinfo?.[0]?.url && !/\.(svg|gif)$/i.test(p.imageinfo[0].url) && !/flag|icon|button/i.test(p.title||''))
+      .filter(p=>{
+        const url = p.imageinfo?.[0]?.url || '';
+        const title = (p.title||'').toLowerCase();
+        if (!url || /\.(svg|gif)$/i.test(url)) return false;
+        if (/flag|icon|button|logo|portrait.*cricket|cricket.*portrait|football|soccer|basketball|baseball|tennis/i.test(title)) return false;
+        return true;
+      })
       .slice(0,5).map(p=>({
         url:toHttps(p.imageinfo[0].url),
         caption:(p.imageinfo[0].extmetadata?.ImageDescription?.value||p.title||'').replace(/<[^>]+>/g,'').substring(0,80),
@@ -731,6 +769,18 @@ async function loadCoins(grid, keyword, people=[], isRoman=false, curatedCoins=[
   // 0. Curated coins — specific known coins for this event (highest priority)
   if (curatedCoins?.length) {
     curatedCoins.forEach(c => coinImages.push(c));
+    // If we have enough curated coins, skip API calls (they often return wrong results)
+    if (coinImages.length >= 4) {
+      const html = `
+        <p class="goodie-context">Coinage from the rulers and regions involved in this event.</p>
+        <div class="images-grid">${coinImages.map(c=>`
+          <div class="image-item">
+            <img src="${c.url}" alt="${c.caption}" loading="lazy" onerror="this.closest('.image-item').style.display='none'"/>
+            <div class="image-caption">${c.caption}<span class="img-source">${c.source||''}</span></div>
+          </div>`).join('')}</div>`;
+      appendGoodie(grid,'🪙','Coins of the Era',html,'Curated · Wikimedia Commons');
+      return;
+    }
   }
 
   // 0b. OCRE for Roman events — most accurate ancient Roman coin source
@@ -805,9 +855,9 @@ async function loadCoins(grid, keyword, people=[], isRoman=false, curatedCoins=[
 }
 
 // ─── GOODIE 4: YOUTUBE DOCS ───────────────────────────────────────────
-async function loadYouTubeDocs(grid, keyword, fallback1, fallback2) {
+async function loadYouTubeDocs(grid, keyword, fallback1, fallback2, fallback3=null) {
   try {
-    const params = new URLSearchParams({ q: keyword, fallback1, fallback2, type:'docs' });
+    const params = new URLSearchParams({ q: keyword, fallback1, fallback2, ...(fallback3?{fallback3}:{}), type:'docs' });
     const data = await fetch(`/api/youtube?${params}`).then(r=>r.json());
     const items = data.items||[];
     if (!items.length) return;
@@ -848,9 +898,20 @@ async function loadYouTubeNews(grid, keyword, fallback1) {
 }
 
 // ─── GOODIE 6: ARCHIVE VIDEO ─────────────────────────────────────────
-async function loadArchiveVideo(grid, keyword) {
+async function loadArchiveVideo(grid, keyword, queries=[]) {
   try {
-    const data = await fetch(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(keyword)}+mediatype:movies&fl[]=identifier,title,description&sort[]=downloads+desc&rows=6&output=json`).then(r=>r.json());
+    // Try multiple query variants for better coverage
+    const searchTerms = queries.length ? queries : [keyword];
+    let docs = [];
+    for (const q of searchTerms.slice(0,3)) {
+      const data = await fetch(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(q)}+mediatype:movies&fl[]=identifier,title,description&sort[]=downloads+desc&rows=4&output=json`).then(r=>r.json());
+      const found = data.response?.docs || [];
+      for (const d of found) {
+        if (!docs.find(x => x.identifier === d.identifier)) docs.push(d);
+      }
+      if (docs.length >= 5) break;
+    }
+    const data = { response: { docs } };
     const items = data.response?.docs||[];
     if (!items.length) return;
     const html = items.slice(0,4).map(v=>`
@@ -866,10 +927,18 @@ async function loadArchiveVideo(grid, keyword) {
 }
 
 // ─── GOODIE 7: ARCHIVE AUDIO ─────────────────────────────────────────
-async function loadArchiveAudio(grid, keyword) {
+async function loadArchiveAudio(grid, keyword, queries=[]) {
   try {
-    const data = await fetch(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(keyword)}+mediatype:audio&fl[]=identifier,title&sort[]=downloads+desc&rows=4&output=json`).then(r=>r.json());
-    const items = data.response?.docs||[];
+    const searchTerms = queries.length ? queries : [keyword];
+    let allItems = [];
+    for (const q of searchTerms.slice(0,2)) {
+      const data = await fetch(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(q)}+mediatype:audio&fl[]=identifier,title&sort[]=downloads+desc&rows=4&output=json`).then(r=>r.json());
+      const found = data.response?.docs || [];
+      for (const d of found) {
+        if (!allItems.find(x => x.identifier === d.identifier)) allItems.push(d);
+      }
+    }
+    const items = allItems;
     if (!items.length) return;
     const audioItems = await Promise.all(items.slice(0,3).map(async item=>{
       try {
@@ -893,8 +962,11 @@ async function loadArchiveAudio(grid, keyword) {
 // ─── GOODIE 8: NEWSPAPERS ────────────────────────────────────────────
 async function loadNewspapers(grid, keyword, year) {
   try {
-    const endYear = Math.min(year+2,1963);
-    const data = await fetch(`https://www.loc.gov/collections/chronicling-america/?andtext=${encodeURIComponent(keyword)}&start_date=${year-1}-01-01&end_date=${endYear}-12-31&fo=json`).then(r=>r.json());
+    // Strict date filter — only show papers contemporary with the event
+    // (within 3 years before or 5 years after)
+    const startYear = Math.max(year - 3, 1770);
+    const endYear   = Math.min(year + 5, 1963);
+    const data = await fetch(`https://www.loc.gov/collections/chronicling-america/?andtext=${encodeURIComponent(keyword)}&start_date=${startYear}-01-01&end_date=${endYear}-12-31&fo=json`).then(r=>r.json());
     const results = data.results||[];
     if (!results.length) return;
     const html = results.slice(0,4).map(r=>`
@@ -928,7 +1000,12 @@ async function loadPrimarySources(grid, keyword, year, people=[]) {
   for (const q of queries) {
     try {
       const data = await fetch(`https://gutendex.com/books/?search=${encodeURIComponent(q)}`).then(r=>r.json());
-      (data.results||[]).forEach(b=>{
+      (data.results||[]).filter(b=>{
+        // Require the search term to appear in the TITLE, not just author name
+        const title = (b.title||'').toLowerCase();
+        const qwords = q.toLowerCase().split(' ').filter(w=>w.length>4);
+        return qwords.some(w => title.includes(w));
+      }).forEach(b=>{
         if(seen.has(b.id)) return; seen.add(b.id);
         books.push({
           id:b.id, title:b.title,
@@ -959,6 +1036,7 @@ async function loadPrimarySources(grid, keyword, year, people=[]) {
         <div class="book-title"><a href="${b.url}" target="_blank">${b.title}</a></div>
         <div class="book-author">${b.author}</div>
         <span class="book-type">${b.source||'Project Gutenberg'} · Free to Read</span>
+        <a href="${b.url}" target="_blank" class="archive-link" style="font-size:11px;margin-top:4px;display:inline-block">📖 Read free →</a>
       </div>
     </div>`).join('');
   appendGoodie(grid,'📜','Primary Sources & Chronicles',html,'Project Gutenberg · Internet Archive');
@@ -1132,9 +1210,12 @@ async function loadMusic(grid, year, keyword) {
           <div style="flex:1">
             <div class="music-title">${c.complete_name}</div>
             <div class="music-composer">${epoch} · ${c.birth?.substring(0,4)||'?'}–${c.death?.substring(0,4)||'present'}</div>
-            ${c.audioUrl
+            ${c.audioUrl && c.audioUrl.endsWith('.mp3')
               ? `<div class="audio-label">${(c.audioTitle||'').substring(0,60)}</div>
-                 <audio controls preload="metadata" style="width:100%;margin-top:4px"><source src="/api/audio/proxy?url=${encodeURIComponent(c.audioUrl)}" type="audio/mpeg"></audio>`
+                 <audio controls preload="metadata" style="width:100%;margin-top:4px"
+                   onloadedmetadata="if(this.duration===0||isNaN(this.duration)){this.style.display='none';this.nextElementSibling.style.display='block'}"
+                   ><source src="/api/audio/proxy?url=${encodeURIComponent(c.audioUrl)}" type="audio/mpeg"></audio>
+                 <a href="${c.archiveId?'https://archive.org/details/'+c.archiveId:'#'}" target="_blank" class="archive-link" style="display:none">Listen on archive.org →</a>`
               : c.archiveId
                 ? `<a href="https://archive.org/details/${c.archiveId}" target="_blank" class="archive-link">Listen on archive.org →</a>`
                 : `<div class="music-note">Search IMSLP.org for free scores</div>`}
@@ -1228,6 +1309,8 @@ async function loadBooks(grid, keyword, eventTitle, people=[], year=0, curatedBo
       </div>
       <div style="flex:1">
         <div class="book-title">${b.url?`<a href="${b.url}" target="_blank">${b.title}</a>`:b.title}</div>
+        ${b.url && (b.source==='Project Gutenberg'||b.source==='Open Library'||b.source==='Curated')
+          ? `<a href="${b.url}" target="_blank" class="archive-link" style="font-size:11px">📖 Read free →</a>` : ''}
         <div class="book-author">${b.author}${b.year?` · ${b.year}`:''}</div>
         <div class="book-note" style="font-size:10px;opacity:0.6;margin-top:2px">${b.source}</div>
       </div>

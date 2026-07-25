@@ -902,3 +902,51 @@ audio { width: 100%; height: 32px; margin-top: 6px; }
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+/* ── Image Lightbox ───────────────────────────────────────────────── */
+.lightbox-modal {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity 0.3s ease;
+}
+.lightbox-modal.lightbox-open { opacity: 1; }
+.lightbox-backdrop {
+  position: absolute; inset: 0;
+  background: rgba(44, 26, 14, 0.92);
+}
+.lightbox-content {
+  position: relative; z-index: 1;
+  max-width: 90vw; max-height: 90vh;
+  display: flex; flex-direction: column; align-items: center;
+  animation: lightboxIn 0.3s ease both;
+}
+@keyframes lightboxIn {
+  from { transform: scale(0.92); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+.lightbox-img {
+  max-width: 90vw; max-height: 80vh;
+  object-fit: contain;
+  border: 2px solid var(--gold);
+  border-radius: 2px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+}
+.lightbox-caption {
+  font-family: 'Crimson Pro', serif;
+  font-style: italic; font-size: 14px;
+  color: var(--gold); text-align: center;
+  max-width: 80vw; margin-top: 10px;
+  line-height: 1.4;
+}
+.lightbox-close {
+  position: absolute; top: -14px; right: -14px;
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--brown); color: var(--parchment-light);
+  border: none; font-size: 16px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  line-height: 1;
+}
+.lightbox-close:hover { background: var(--red); }
+
+/* Make image items show pointer cursor */
+.image-item img, .met-img { cursor: zoom-in; }
