@@ -501,7 +501,7 @@ app.get('/api/cache/status', async (req, res) => {
   if (!redis) return res.status(503).json({ error: 'Redis not connected' });
   const today = new Date().toISOString().split('T')[0];
   const results = {};
-  for (const v of ['v3','v4','v5']) {
+  for (const v of ['v5','v6','v7']) {
     const key  = `pable:events:${v}:${today}`;
     const raw  = await redis.get(key).catch(()=>null);
     const ttl  = await redis.ttl(key).catch(()=>-1);
@@ -529,7 +529,7 @@ app.post('/api/cache/clear', async (req, res) => {
   try {
     const today    = new Date().toISOString().split('T')[0];
     // Clear all version keys for today
-    for (const v of ['v3','v4','v5']) {
+    for (const v of ['v5','v6','v7']) {
       await redis.del(`pable:events:${v}:${today}`).catch(()=>{});
     }
     // Rebuild immediately
