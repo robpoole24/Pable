@@ -152,7 +152,7 @@ const CURATED = [
         title: 'In Hoc Signo: Constantine, Christianity and the Roman Empire',
         author: 'Various Scholars',
         type: 'Non-Fiction',
-        note: 'Examines how Constantine's conversion and the Arch reshaped Western civilization.',
+        note: 'Examines how Constantine\'s conversion and the Arch reshaped Western civilization.',
         url: 'https://openlibrary.org/search?q=Constantine+Christianity+Roman+Empire'
       }
     ],
@@ -168,7 +168,7 @@ const CURATED = [
         source: 'Wikimedia Commons'
       }
     ],
-    context: `On July 25, 315 CE, the Arch of Constantine was dedicated near the Colosseum in Rome — one of the largest and best-preserved Roman triumphal arches, built to commemorate Constantine I's victory over Maxentius at the Battle of Milvian Bridge on October 28, 312 CE. The battle was a turning point in world history: Constantine, who reportedly saw a vision of a Christian cross before the battle with the words "In this sign, conquer," defeated Maxentius who drowned in the Tiber during the rout. Constantine went on to issue the Edict of Milan in 313 CE, granting religious tolerance across the empire, effectively beginning Christianity's rise to become the dominant religion of Western civilization. The arch itself is a masterpiece of spoliation — it incorporates sculptural reliefs taken from monuments of Trajan, Hadrian, and Marcus Aurelius, recut to show Constantine's features.`
+    context: `On July 25, 315 CE, the Arch of Constantine was dedicated near the Colosseum in Rome — one of the largest and best-preserved Roman triumphal arches, built to commemorate Constantine I's victory over Maxentius at the Battle of Milvian Bridge on October 28, 312 CE. The battle was a turning point in world history: Constantine, who reportedly saw a vision of a Christian cross before the battle with the words "In this sign, conquer," defeated Maxentius who drowned in the Tiber during the rout. Constantine went on to issue the Edict of Milan in 313 CE, granting religious tolerance across the empire, effectively beginning Christianity's rise to become the dominant religion of Western civilization. The arch itself is a masterpiece of spoliation — it incorporates sculptural reliefs taken from monuments of Trajan, Hadrian, and Marcus Aurelius, recut to show Constantine\'s features.`
   },
 
   // ── Alexander the Great ───────────────────────────────────────────────
