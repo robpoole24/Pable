@@ -112,6 +112,65 @@ const CURATED = [
     ]
   },
 
+
+  // ── Arch of Constantine, 315 ──────────────────────────────────────────
+  {
+    match: ['Arch of Constantine', 'Constantine', 'Milvian Bridge', 'Maxentius'],
+    people: [
+      {
+        name: 'Constantine I',
+        role: 'Roman Emperor · First Christian emperor of Rome',
+        wikiTitle: 'Constantine_the_Great'
+      },
+      {
+        name: 'Maxentius',
+        role: 'Roman Emperor · Defeated at the Battle of Milvian Bridge',
+        wikiTitle: 'Maxentius'
+      }
+    ],
+    videos: [
+      { id: 'vvDcrzeBRyM', title: 'The Arch of Constantine — Rome', channel: 'History Channel', type: 'documentary' },
+      { id: 'wqB4lYFtO7E', title: 'Arch of Constantine Explained', channel: 'toldinstone', type: 'documentary' },
+      { id: 'uJLXyBzMci0', title: 'Ancient Roman Music — Synaulia', channel: 'Synaulia', type: 'music' }
+    ],
+    books: [
+      {
+        title: 'Constantine: Roman Emperor, Christian Victor',
+        author: 'Paul Stephenson',
+        type: 'Non-Fiction',
+        note: 'The definitive modern biography of Constantine — his military campaigns, conversion, and legacy.',
+        url: 'https://openlibrary.org/search?q=Constantine+Roman+Emperor+Christian+Victor+Stephenson'
+      },
+      {
+        title: 'The Life of Constantine (Vita Constantini)',
+        author: 'Eusebius of Caesarea',
+        type: 'Primary Source — Free to Read',
+        note: 'Written by a contemporary bishop — the first biography of a Roman emperor, covering his victory at Milvian Bridge.',
+        url: 'https://www.gutenberg.org/ebooks/45976'
+      },
+      {
+        title: 'In Hoc Signo: Constantine, Christianity and the Roman Empire',
+        author: 'Various Scholars',
+        type: 'Non-Fiction',
+        note: 'Examines how Constantine's conversion and the Arch reshaped Western civilization.',
+        url: 'https://openlibrary.org/search?q=Constantine+Christianity+Roman+Empire'
+      }
+    ],
+    coins: [
+      {
+        url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8b/Coin_of_Constantine_I.jpg/320px-Coin_of_Constantine_I.jpg',
+        caption: 'Gold solidus of Constantine I, c. 313 CE — minted shortly before the Arch was completed. Obverse: Constantine helmeted. Reverse: Sol Invictus.',
+        source: 'Wikimedia Commons'
+      },
+      {
+        url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Constantine_I_Solidus_Trier_313_obverse.jpg/320px-Constantine_I_Solidus_Trier_313_obverse.jpg',
+        caption: 'Solidus of Constantine I, Trier mint, 313 CE — the year of the Edict of Milan granting religious tolerance.',
+        source: 'Wikimedia Commons'
+      }
+    ],
+    context: `On July 25, 315 CE, the Arch of Constantine was dedicated near the Colosseum in Rome — one of the largest and best-preserved Roman triumphal arches, built to commemorate Constantine I's victory over Maxentius at the Battle of Milvian Bridge on October 28, 312 CE. The battle was a turning point in world history: Constantine, who reportedly saw a vision of a Christian cross before the battle with the words "In this sign, conquer," defeated Maxentius who drowned in the Tiber during the rout. Constantine went on to issue the Edict of Milan in 313 CE, granting religious tolerance across the empire, effectively beginning Christianity's rise to become the dominant religion of Western civilization. The arch itself is a masterpiece of spoliation — it incorporates sculptural reliefs taken from monuments of Trajan, Hadrian, and Marcus Aurelius, recut to show Constantine's features.`
+  },
+
   // ── Alexander the Great ───────────────────────────────────────────────
   {
     match: ['Alexander the Great', 'Alexander III of Macedon'],

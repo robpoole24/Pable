@@ -102,7 +102,7 @@ function renderApp() {
   const today     = new Date();
   const monthName = today.toLocaleString('en-US', { month: 'long' });
   const day       = today.getDate();
-  const year      = today.getFullYear();
+  const year      = today.getFullYear(); // kept for internal use
 
   document.getElementById('app').innerHTML = `
     <div class="pable-root">
@@ -303,16 +303,8 @@ async function loadAllGoodies(ev) {
 
   container.innerHTML = `
     <div class="goodies-title">Pable's Goodies</div>
-    <div class="goodies-unfold-wrapper">
-      <div class="unfold-panel unfold-panel-1" id="goodies-grid"></div>
-      <div class="unfold-crease"></div>
-      <div class="unfold-panel unfold-panel-2" id="goodies-grid-2"></div>
-      <div class="unfold-crease unfold-crease-2"></div>
-      <div class="unfold-panel unfold-panel-3" id="goodies-grid-3"></div>
-    </div>
+    <div class="goodies-reveal" id="goodies-grid"></div>
   `;
-  // All goodies go into grid-1 by default; the panels just provide the
-  // visual unfold effect — content fills naturally as it loads
   const grid = document.getElementById('goodies-grid');
 
   // Merge curated people names into query list — these are the most precise
@@ -334,7 +326,8 @@ async function loadAllGoodies(ev) {
     // 3. Coins — curated coins first, then API with curated people names
     (isRoman || isMedieval || curated.coins?.length) ? loadCoins(grid, keyword, queryPeople, isRoman, curated.coins) : null,
     // 4. YouTube documentaries (layered queries)
-    loadYouTubeDocs(grid, keyword, fallbackQuery1, fallbackQuery2),
+    // YouTube gets full query expansion for best coverage
+    loadYouTubeDocs(grid, queryExpansion[0]||keyword, queryExpansion[1]||fallbackQuery1, queryExpansion[2]||fallbackQuery2),
     // 5. YouTube news (post-1950)
     hasNewsVideo ? loadYouTubeNews(grid, keyword, fallbackQuery1) : null,
     // 6. Internet Archive video
@@ -740,7 +733,20 @@ async function loadCoins(grid, keyword, people=[], isRoman=false, curatedCoins=[
     curatedCoins.forEach(c => coinImages.push(c));
   }
 
-  // 1. Numista API — primary coin source
+  // 0b. OCRE for Roman events — most accurate ancient Roman coin source
+  if (isRoman && coinImages.length < 4) {
+    const romanQuery = people[0]?.split(' ')[0] || keyword.split(' ')[0];
+    try {
+      const data = await fetch(`/api/ocre?q=${encodeURIComponent(romanQuery)}`).then(r=>r.json());
+      (data.results||[]).filter(c=>c.thumbnail).slice(0,4).forEach(c=>coinImages.push({
+        url: c.thumbnail,
+        caption: (c.label || 'Roman Imperial coin') + (c.date ? ` · ${c.date}` : ''),
+        source: 'OCRE'
+      }));
+    } catch {}
+  }
+
+  // 1. Numista API — use emperor/ruler name not event name for better results
   // Response: { count, types: [{ id, title, issuer:{name}, min_year, max_year,
   //   obverse_thumbnail, reverse_thumbnail }] }
   const numistaQueries = [
@@ -1182,10 +1188,9 @@ async function loadBooks(grid, keyword, eventTitle, people=[], year=0, curatedBo
       const data = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=6&fields=key,title,author_name,first_publish_year,cover_i,subject`).then(r=>r.json());
       (data.docs||[]).filter(b=>{
         const t=(b.title||'').toLowerCase();
-        const desc = (b.subject||[]).join(' ').toLowerCase();
-        const qwords = q.toLowerCase().split(' ').filter(w=>w.length>3);
-        // Match on title OR subject tags — catches books "about" the topic
-        return qwords.some(w => t.includes(w) || desc.includes(w));
+        const qwords = q.toLowerCase().split(' ').filter(w=>w.length>4);
+        // Must match in the actual title — subject tag matching caused false positives
+        return qwords.some(w => t.includes(w));
       }).slice(0,3).forEach(b=>{
         const key=b.title?.toLowerCase(); if(seen.has(key)) return; seen.add(key);
         books.push({ title:b.title, author:b.author_name?.[0]||'Unknown', year:b.first_publish_year,
