@@ -799,9 +799,13 @@ async function loadCoins(grid, keyword, people=[], isRoman=false, curatedCoins=[
   // 1. Numista API — use emperor/ruler name not event name for better results
   // Response: { count, types: [{ id, title, issuer:{name}, min_year, max_year,
   //   obverse_thumbnail, reverse_thumbnail }] }
+  // Use people names for coin search — much more accurate than event keywords
+  // e.g. "Frederick Barbarossa" finds his coins; "Friedrich Barbarossa arrives at Niš" doesn't
+  const coinPeople = people.length ? people : [keyword.split(' ').slice(0,3).join(' ')];
   const numistaQueries = [
-    ...people.slice(0,2),
-    keyword.split(' ').slice(0,3).join(' ')
+    ...coinPeople.slice(0,2),
+    // Also try first 2 words of keyword as fallback
+    keyword.split(' ').slice(0,2).join(' ')
   ];
   for (const q of numistaQueries) {
     try {
@@ -1182,29 +1186,79 @@ async function loadLifeAndSociety(grid, keyword, year, fullText, curatedPeopleNa
 // ─── GOODIE 13: MUSIC ────────────────────────────────────────────────
 async function loadMusic(grid, year, keyword) {
   const epoch = musicEpoch(year);
+
+  // For early modern era (colonial/revolutionary), also search for fife and drum music
+  const isColonialEra = year >= 1700 && year <= 1820;
+
   if (epoch) {
+    // For colonial era, try fife and drum first via Archive
+    if (isColonialEra) {
+      try {
+        const archiveData = await fetch(`https://archive.org/advancedsearch.php?q=(fife+drum+OR+"colonial+music"+OR+"revolutionary+war+music")+mediatype:audio&fl[]=identifier,title&sort[]=downloads+desc&rows=4&output=json`).then(r=>r.json());
+        const colonialItems = archiveData.response?.docs || [];
+        if (colonialItems.length) {
+          const colonialAudio = await Promise.all(colonialItems.slice(0,3).map(async item=>{
+            const meta = await fetch(`https://archive.org/metadata/${item.identifier}`).then(r=>r.json()).catch(()=>({files:[]}));
+            const file = (meta.files||[]).find(f=>/\.mp3$/i.test(f.name));
+            return file ? { title: item.title, identifier: item.identifier,
+              audioUrl: `https://archive.org/download/${item.identifier}/${encodeURIComponent(file.name)}` } : null;
+          }));
+          const validColonial = colonialAudio.filter(Boolean);
+          if (validColonial.length) {
+            const html = validColonial.map(a=>`
+              <div class="music-item">
+                <div class="music-icon">🥁</div>
+                <div style="flex:1">
+                  <div class="music-title">${(a.title||'').substring(0,70)}</div>
+                  <div class="music-composer">Colonial / Revolutionary Era</div>
+                  <audio controls preload="metadata" style="width:100%;margin-top:4px">
+                    <source src="/api/audio/proxy?url=${encodeURIComponent(a.audioUrl)}" type="audio/mpeg">
+                  </audio>
+                </div>
+              </div>`).join('');
+            appendGoodie(grid, '🥁', 'Music of the Colonial Era', html, 'Internet Archive');
+            // Still continue to load classical composers below
+          }
+        }
+      } catch {}
+    }
+
     try {
       const data = await fetch(`https://api.openopus.org/composer/list/epoch/${epoch}.json`).then(r=>r.json());
-      const composers = (data.composers||[]).filter(c=>{
+      const allComposers = (data.composers||[]).filter(c=>{
         const born=parseInt(c.birth), died=parseInt(c.death)||9999;
-        return born<=year+60 && died>=year-60;
-      }).slice(0,4);
-      if (!composers.length) return;
+        return born<=year+100 && died>=year-100;
+      });
+      if (!allComposers.length) return;
+
+      // Shuffle to avoid always showing the same composers
+      const shuffled = allComposers.sort(() => Math.random() - 0.5).slice(0, 8);
+      // We'll try up to 8 and keep first 4 that have working audio
+      const composers = shuffled;
 
       const withAudio = await Promise.all(composers.map(async c=>{
         try {
           const q  = encodeURIComponent(c.complete_name);
-          const ar = await fetch(`https://archive.org/advancedsearch.php?q=${q}+mediatype:audio&fl[]=identifier,title&rows=1&output=json`).then(r=>r.json());
-          const item = ar.response?.docs?.[0];
-          if (!item) return {...c, audioUrl:null};
-          const meta = await fetch(`https://archive.org/metadata/${item.identifier}`).then(r=>r.json());
-          const file = (meta.files||[]).find(f=>/\.(mp3|ogg)$/i.test(f.name));
-          return {...c, audioUrl:file?`https://archive.org/download/${item.identifier}/${file.name}`:null,
-                   audioTitle:item.title, archiveId:item.identifier};
+          const ar = await fetch(`https://archive.org/advancedsearch.php?q=${q}+mediatype:audio&fl[]=identifier,title&sort[]=downloads+desc&rows=4&output=json`).then(r=>r.json());
+          // Try multiple items to find one with a real MP3
+          for (const item of (ar.response?.docs||[])) {
+            const meta = await fetch(`https://archive.org/metadata/${item.identifier}`).then(r=>r.json());
+            const file = (meta.files||[]).find(f=>/\.mp3$/i.test(f.name) && f.name);
+            if (file) {
+              return { ...c,
+                audioUrl: `https://archive.org/download/${item.identifier}/${encodeURIComponent(file.name)}`,
+                audioTitle: item.title||null,
+                archiveId: item.identifier
+              };
+            }
+          }
+          return {...c, audioUrl:null};
         } catch { return {...c,audioUrl:null}; }
       }));
 
-      const html = withAudio.map(c=>`
+      // Filter to composers with working audio, fall back to archive link, show max 4
+      const validComposers = withAudio.filter(c => c).slice(0, 4);
+      const html = validComposers.map(c=>`
         <div class="music-item">
           ${c.portrait?`<img src="${c.portrait}" class="composer-portrait" onerror="this.style.display='none'"/>`:'<div class="music-icon">♪</div>'}
           <div style="flex:1">

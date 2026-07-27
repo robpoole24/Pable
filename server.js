@@ -73,25 +73,40 @@ function scoreEvent(ev) {
 
 // ─── Extract named entities from Wikipedia article text ───────────────
 function extractEntities(article) {
-  // Pull people from the linked text — Wikipedia marks people as [[Name|Name]]
-  // or from the article's wikibase_item links. We look for capitalized names
-  // in the extract that appear to be proper nouns.
   const entities = { people: [], places: [] };
   if (!article) return entities;
 
-  // Match capitalized multi-word proper nouns (2-3 words)
-  const namePattern = /\b([A-Z][a-z]+(?:\s+(?:of|the|de|von|I|II|III|IV|V|VI|VII|VIII|IX|X))?(?:\s+[A-Z][a-z]+){0,2})\b/g;
-  const seen = new Set();
+  const SKIP = new Set(['The','This','That','When','After','Before','During','While',
+    'Their','These','Those','January','February','March','April','May','June','July',
+    'August','September','October','November','December','Monday','Tuesday','Wednesday',
+    'Thursday','Friday','Saturday','Sunday','Holy','Roman','King','Queen','Emperor',
+    'Pope','Prince','Duke','Count','Lord','Saint','General','Admiral']);
+
+  // Pattern 1: "King/Emperor/etc. [Name] of/the [Place]" — catches "Serbian King Stefan Nemanja"
+  const titledNames = /\b(?:King|Queen|Emperor|Empress|Pope|Prince|Duke|Count|Sultan|Caliph|Tsar|Pharaoh|General|Admiral|President|Chancellor)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})/g;
   let m;
+  while ((m = titledNames.exec(article)) !== null) {
+    const name = m[1].trim();
+    if (name.length > 3 && !SKIP.has(name.split(' ')[0])) {
+      entities.people.push(name);
+      if (entities.people.length >= 8) break;
+    }
+  }
+
+  // Pattern 2: Standard capitalized multi-word proper nouns
+  const namePattern = /\b([A-Z][a-z]{2,}(?:\s+(?:von|de|of|the|I|II|III|IV|V|VI|VII|VIII|IX|X))?(?:\s+[A-Z][a-z]{2,}){0,2})\b/g;
+  const seen = new Set(entities.people);
   while ((m = namePattern.exec(article)) !== null) {
     const name = m[1];
-    if (seen.has(name) || name.length < 4) continue;
+    if (seen.has(name) || name.length < 5) continue;
     seen.add(name);
-    // Filter obvious non-names
-    if (/^(The|This|That|When|After|Before|During|While|Their|These|Those|July|August|September|January|February|March|April|May|June|October|November|December|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)$/.test(name)) continue;
+    if (SKIP.has(name.split(' ')[0])) continue;
     entities.people.push(name);
-    if (entities.people.length >= 6) break;
+    if (entities.people.length >= 8) break;
   }
+
+  // Deduplicate
+  entities.people = [...new Set(entities.people)].slice(0, 6);
   return entities;
 }
 
@@ -287,7 +302,7 @@ async function buildDailyEvents() {
 async function ensureDailyEvents() {
   if (!redis) return;
   const today    = new Date().toISOString().split('T')[0];
-  const cacheKey = `pable:events:v8:${today}`;
+  const cacheKey = `pable:events:v9:${today}`;
   const cached   = await redis.get(cacheKey);
   if (cached) { console.log('Events cached for', today); return; }
   try {
@@ -316,7 +331,7 @@ scheduleMidnightRefresh();
 app.get('/api/events/today', async (req, res) => {
   try {
     const today    = new Date().toISOString().split('T')[0];
-    const cacheKey = `pable:events:v8:${today}`;
+    const cacheKey = `pable:events:v9:${today}`;
     if (redis) {
       const cached = await redis.get(cacheKey);
       if (cached) return res.json(JSON.parse(cached));
@@ -399,35 +414,39 @@ app.get('/api/nasa/apod', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// YouTube — layered queries: specific → figures → era/region
+// YouTube — layered queries across up to 4 fallbacks
 app.get('/api/youtube', async (req, res) => {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key) return res.status(500).json({ error: 'YouTube key missing' });
-  const { q, fallback1, fallback2, type = 'any' } = req.query;
+  const { q, fallback1, fallback2, fallback3, type = 'any' } = req.query;
 
-  const queries = [q, fallback1, fallback2].filter(Boolean);
+  // All query variants — try each until we have enough results
+  const queries = [q, fallback1, fallback2, fallback3].filter(Boolean);
   let items = [];
 
   for (const query of queries) {
-    if (items.length >= 4) break;
+    if (items.length >= 5) break;
     try {
-      const searchQ = type === 'news'
-        ? `${query} news report footage`
-        : type === 'docs' ? `${query} documentary history`
-        : query;
-      const data = await apiFetch(
-        `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(searchQ)}&type=video&videoEmbeddable=true&maxResults=8&relevanceLanguage=en&videoDuration=any&key=${key}`
-      );
-      const found = data.items || [];
-      // Deduplicate
-      for (const item of found) {
-        if (!items.find(x => x.id?.videoId === item.id?.videoId)) {
-          items.push(item);
+      // For docs: first try bare query (gets most results), then with "history" appended
+      // Appending "documentary history" often REDUCES results for specific historical topics
+      const searchVariants = type === 'news'
+        ? [`${query} news footage`, `${query} news report`]
+        : [`${query}`, `${query} history documentary`];
+
+      for (const searchQ of searchVariants) {
+        if (items.length >= 5) break;
+        const data = await apiFetch(
+          `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(searchQ)}&type=video&videoEmbeddable=true&maxResults=6&relevanceLanguage=en&videoDuration=any&key=${key}`
+        );
+        for (const item of (data.items || [])) {
+          if (!items.find(x => x.id?.videoId === item.id?.videoId)) {
+            items.push(item);
+          }
         }
       }
     } catch {}
   }
-  res.json({ items: items.slice(0, 6) });
+  res.json({ items: items.slice(0, 8) });
 });
 
 // FRED CPI
@@ -537,7 +556,7 @@ app.post('/api/cache/clear', async (req, res) => {
     const now = new Date(), midnight = new Date(now);
     midnight.setHours(24,0,0,0);
     const ttl = Math.floor((midnight-now)/1000);
-    await redis.setEx(`pable:events:v8:${today}`, ttl, JSON.stringify(events));
+    await redis.setEx(`pable:events:v9:${today}`, ttl, JSON.stringify(events));
     res.json({ ok: true, built: events.length, ttl });
   } catch (e) {
     res.status(500).json({ error: e.message });
