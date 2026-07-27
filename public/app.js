@@ -125,7 +125,7 @@ function renderApp() {
   const day       = today.getDate();
   const year      = today.getFullYear(); // kept for internal use
 
-  document.getElementById('app').innerHTML = `
+  document.getElementById('app').innerHTML = `<!-- Pable v5.4 -->
     <div class="pable-root">
       <div class="pable-header">
         <div class="pable-header-eyebrow">
@@ -294,6 +294,7 @@ function breakSeal() {
 
 // ─── LOAD ALL GOODIES ─────────────────────────────────────────────────
 async function loadAllGoodies(ev) {
+  try {
   const container = document.getElementById('goodies-container');
   const year      = parseInt(ev.year) || new Date().getFullYear();
   const title     = (ev.text||'').replace(/\[\[.*?\]\]/g,'');
@@ -425,6 +426,12 @@ async function loadAllGoodies(ev) {
 
   if (!grid.children.length) {
     grid.innerHTML = `<div class="empty-state" style="padding:20px 24px">No additional resources found. Try the Wikipedia article linked above.</div>`;
+  }
+  } catch(err) {
+    const c = document.getElementById('goodies-container');
+    if (c) c.innerHTML += `<div style="padding:20px;color:darkred;background:#fff8f0;font-family:monospace;font-size:12px;border:1px solid red;margin:10px">
+      <b>Debug error:</b> ${err.message}<br><pre>${(err.stack||'').substring(0,500)}</pre></div>`;
+    console.error('loadAllGoodies crash:', err);
   }
 }
 
