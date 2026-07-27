@@ -264,17 +264,23 @@ async function fetchGoodiesForEvent(ev) {
   } catch {}
 
   // ── Internet Archive audio ─────────────────────────────────────────
+  // Only for post-1877 events; search pageTitle first (most specific), then people
   if (hasRecording) {
     try {
-      const queries = [...new Set([...allPeople.slice(0,2), pageTitle])].filter(Boolean);
+      const audioQueries = [pageTitle, ...allPeople.slice(0,1)].filter(Boolean);
+      const pageTitleWords = pageTitle.toLowerCase().split(/\s+/).filter(w=>w.length>4);
       let audioItems = [];
-      for (const q of queries.slice(0,2)) {
+      for (const q of audioQueries.slice(0,2)) {
         if (audioItems.length >= 4) break;
         const data = await apiFetch(
-          `https://archive.org/advancedsearch.php?q=${encodeURIComponent(q)}+mediatype:audio&fl[]=identifier,title&sort[]=downloads+desc&rows=3&output=json`
+          `https://archive.org/advancedsearch.php?q=${encodeURIComponent(q)}+mediatype:audio&fl[]=identifier,title&sort[]=downloads+desc&rows=5&output=json`
         ).catch(()=>({response:{docs:[]}}));
         for (const item of (data.response?.docs||[])) {
           if (audioItems.find(x=>x.identifier===item.identifier)) continue;
+          // Relevance: result title must share a word with the page title
+          const resultTitle = (item.title||'').toLowerCase();
+          const relevant = pageTitleWords.some(w => resultTitle.includes(w));
+          if (!relevant) continue;
           const meta = await apiFetch(`https://archive.org/metadata/${item.identifier}`).catch(()=>({files:[]}));
           const file = (meta.files||[]).find(f=>/\.mp3$/i.test(f.name));
           if (file) audioItems.push({ identifier:item.identifier, title:item.title,
@@ -346,7 +352,15 @@ async function fetchGoodiesForEvent(ev) {
   // ── Books ──────────────────────────────────────────────────────────
   try {
     const booksKey = process.env.GOOGLE_BOOKS_API_KEY;
-    const queries  = [...new Set([...allPeople.slice(0,2), pageTitle.split(' ').slice(0,3).join(' ')])].filter(Boolean);
+    // Primary query: page title words (most specific to this event)
+    // Secondary: key people — but only if pageTitle search finds nothing
+    const pageTitleClean = pageTitle.replace(/_/g, ' ').replace(/,.*/, '').trim();
+    const queries = [...new Set([
+      pageTitleClean.split(' ').slice(0,4).join(' '),  // e.g. "United States Post Office"
+      ...allPeople.slice(0,1)                           // e.g. "Benjamin Franklin" as fallback
+    ])].filter(Boolean);
+    // Words that must appear in book title for it to be relevant
+    const topicWords = pageTitleClean.toLowerCase().split(/\s+/).filter(w=>w.length>4);
     let books = [];
     const seen = new Set();
 
@@ -362,8 +376,11 @@ async function fetchGoodiesForEvent(ev) {
       const olData = await apiFetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=4&fields=key,title,author_name,first_publish_year,cover_i`).catch(()=>({docs:[]}));
       for (const b of (olData.docs||[])) {
         const t = (b.title||'').toLowerCase();
-        const qwords = q.toLowerCase().split(' ').filter(w=>w.length>4);
-        if (!qwords.some(w=>t.includes(w))) continue;
+        // Must match topic words OR query words — prevents off-topic results
+        const qwords = q.toLowerCase().split(/\s+/).filter(w=>w.length>4);
+        const matchesTopic = topicWords.length ? topicWords.some(w=>t.includes(w)) : true;
+        const matchesQuery = qwords.some(w=>t.includes(w));
+        if (!matchesTopic && !matchesQuery) continue;
         if (seen.has(t)) continue; seen.add(t);
         books.push({ title:b.title, author:b.author_name?.[0]||'Unknown', year:b.first_publish_year,
           coverUrl:b.cover_i?`https://covers.openlibrary.org/b/id/${b.cover_i}-M.jpg`:null,
@@ -374,8 +391,10 @@ async function fetchGoodiesForEvent(ev) {
         const gbData = await apiFetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=4&langRestrict=en&key=${booksKey}`).catch(()=>({items:[]}));
         for (const item of (gbData.items||[])) {
           const vol = item.volumeInfo, t=(vol.title||'').toLowerCase();
-          const qwords = q.toLowerCase().split(' ').filter(w=>w.length>4);
-          if (!qwords.some(w=>t.includes(w))) continue;
+          const qwords = q.toLowerCase().split(/\s+/).filter(w=>w.length>4);
+          const matchesTopic = topicWords.length ? topicWords.some(w=>t.includes(w)) : true;
+          const matchesQuery = qwords.some(w=>t.includes(w));
+          if (!matchesTopic && !matchesQuery) continue;
           if (seen.has(t)) continue; seen.add(t);
           books.push({ title:vol.title, author:vol.authors?.[0]||'Unknown',
             year:vol.publishedDate?.substring(0,4),
@@ -441,8 +460,10 @@ async function fetchGoodiesForEvent(ev) {
         const data = await apiFetch(`https://gutendex.com/books/?search=${encodeURIComponent(q)}`).catch(()=>({results:[]}));
         for (const b of (data.results||[])) {
           const t = (b.title||'').toLowerCase();
-          const qwords = q.toLowerCase().split(' ').filter(w=>w.length>4);
-          if (!qwords.some(w=>t.includes(w))) continue;
+          const qwords = q.toLowerCase().split(/\s+/).filter(w=>w.length>4);
+          const ptWords = pageTitleClean?.toLowerCase().split(/\s+/).filter(w=>w.length>4) || [];
+          const relevant = qwords.some(w=>t.includes(w)) || ptWords.some(w=>t.includes(w));
+          if (!relevant) continue;
           if (seen.has(b.id)) continue; seen.add(b.id);
           sources.push({ title:b.title, author:b.authors?.[0]?.name||'Unknown',
             url:`https://gutenberg.org/ebooks/${b.id}`, source:'Project Gutenberg' });
@@ -655,12 +676,18 @@ async function ensureDailyCache() {
     let events;
     if (evCached) {
       events = JSON.parse(evCached);
+      // Ensure events have _goodieIndex (may be missing from older cache)
+      events = events.map((ev, i) => ev._goodieIndex !== undefined ? ev : { ...ev, _goodieIndex: i });
       console.log('Events already cached, building goodies…');
     } else {
       console.log('Building events…');
       events = await buildDailyEvents();
       const ttl = Math.max(Math.floor((getPacificMidnight() - new Date()) / 1000), 3600);
-      await redis.setEx(eventKey, ttl, JSON.stringify(events));
+        // Tag each event with its cache index BEFORE storing
+      // This survives client-side sorting — events carry their own goodie slot number
+      const taggedEvents = events.map((ev, i) => ({ ...ev, _goodieIndex: i }));
+      await redis.setEx(eventKey, ttl, JSON.stringify(taggedEvents));
+      events = taggedEvents;
       console.log(`Events cached (${events.length})`);
     }
 
