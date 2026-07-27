@@ -521,15 +521,20 @@ app.get('/api/numista', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// OCRE — Roman coin linked data (no key needed)
+// OCRE — Roman coin linked data (27 BCE–476 CE only, no key needed)
 app.get('/api/ocre', async (req, res) => {
   const { q } = req.query;
+  if (!q) return res.json({ results: [] });
   try {
     const data = await apiFetch(
       `https://numismatics.org/ocre/api/json?q=${encodeURIComponent(q)}&rows=4`
     );
     res.json(data);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    // Return empty results instead of 500 — OCRE is supplementary
+    console.warn('OCRE API error:', e.message);
+    res.json({ results: [] });
+  }
 });
 
 // Cache status — check what's currently cached

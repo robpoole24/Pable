@@ -307,7 +307,9 @@ async function loadAllGoodies(ev) {
   // Use server-side query expansion if available — much richer than single keyword
   const queryExpansion = ev.queryExpansion || [keyword, ...curatedPeopleNames].filter(Boolean);
   const isSpace     = /nasa|apollo|space|astronaut|rocket|moon|mars|orbit|satellite|shuttle|gemini|iss|hubble/i.test(title+fullText);
-  const isRoman     = /roman|caesar|augustus|empire|legion|senate|consul|gladiator|colosseum|carthage/i.test(title+fullText);
+  // OCRE only covers Roman Imperial coins 27BCE–476CE — restrict strictly to ancient era
+  const isRoman     = year < 500 && year > -100 &&
+    /roman|caesar|augustus|legion|senate|consul|gladiator|colosseum|carthage/i.test(title+fullText);
   const isMedieval  = year >= 500 && year < 1500;
   const hasRecording = year >= 1877;
   const hasNewsVideo = year >= 1950;
@@ -371,7 +373,8 @@ async function loadAllGoodies(ev) {
     // 2b. Met Museum dedicated goodie
     loadMetArtifacts(grid, keyword, year, queryPeople),
     // 3. Coins — curated coins first, then API with curated people names
-    (isRoman || isMedieval || curated.coins?.length) ? loadCoins(grid, keyword, queryPeople, isRoman, curated.coins) : null,
+    // Only load coins if: curated coins exist, OR it's ancient/Roman, OR it's medieval with specific people to search
+    (curated.coins?.length || isRoman || (isMedieval && queryPeople.length)) ? loadCoins(grid, keyword, queryPeople, isRoman, curated.coins) : null,
     // 4. YouTube documentaries (layered queries)
     // YouTube — use all query expansion variants for maximum coverage
     loadYouTubeDocs(grid,
@@ -803,17 +806,20 @@ async function loadCoins(grid, keyword, people=[], isRoman=false, curatedCoins=[
     }
   }
 
-  // 0b. OCRE for Roman events — most accurate ancient Roman coin source
+  // 0b. OCRE for strictly ancient Roman events only (27 BCE – 476 CE)
   if (isRoman && coinImages.length < 4) {
     const romanQuery = people[0]?.split(' ')[0] || keyword.split(' ')[0];
     try {
-      const data = await fetch(`/api/ocre?q=${encodeURIComponent(romanQuery)}`).then(r=>r.json());
-      (data.results||[]).filter(c=>c.thumbnail).slice(0,4).forEach(c=>coinImages.push({
-        url: c.thumbnail,
-        caption: (c.label || 'Roman Imperial coin') + (c.date ? ` · ${c.date}` : ''),
-        source: 'OCRE'
-      }));
-    } catch {}
+      const r = await fetch(`/api/ocre?q=${encodeURIComponent(romanQuery)}`);
+      if (r.ok) {
+        const data = await r.json();
+        (data.results||[]).filter(c=>c.thumbnail).slice(0,4).forEach(c=>coinImages.push({
+          url: c.thumbnail,
+          caption: (c.label || 'Roman Imperial coin') + (c.date ? ` · ${c.date}` : ''),
+          source: 'OCRE'
+        }));
+      }
+    } catch (e) { console.warn('OCRE error (non-fatal):', e.message); }
   }
 
   // 1. Numista API — use emperor/ruler name not event name for better results
@@ -852,17 +858,20 @@ async function loadCoins(grid, keyword, people=[], isRoman=false, curatedCoins=[
     }
   }
 
-  // 3. OCRE — Roman empire coins (no key needed)
+  // 3. OCRE — strictly ancient Roman only
   if (isRoman && coinImages.length < 4) {
     try {
       const q = people[0] || keyword.split(' ')[0];
-      const data = await fetch(`/api/ocre?q=${encodeURIComponent(q)}`).then(r=>r.json());
-      (data.results||[]).filter(c=>c.thumbnail).slice(0,3).forEach(c=>coinImages.push({
-        url: c.thumbnail,
-        caption: c.label || 'Roman Imperial coin',
-        source: 'OCRE'
-      }));
-    } catch {}
+      const r = await fetch(`/api/ocre?q=${encodeURIComponent(q)}`);
+      if (r.ok) {
+        const data = await r.json();
+        (data.results||[]).filter(c=>c.thumbnail).slice(0,3).forEach(c=>coinImages.push({
+          url: c.thumbnail,
+          caption: c.label || 'Roman Imperial coin',
+          source: 'OCRE'
+        }));
+      }
+    } catch (e) { console.warn('OCRE error (non-fatal):', e.message); }
   }
 
   const display = coinImages.filter((c,i,a)=>a.findIndex(x=>x.url===c.url)===i).slice(0,8);
