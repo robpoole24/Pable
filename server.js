@@ -222,15 +222,21 @@ async function fetchGoodiesForEvent(ev) {
 
   // ── Internet Archive video ─────────────────────────────────────────
   try {
-    const queries = [...new Set([pageTitle, ...allPeople.slice(0,2)])].filter(Boolean);
+    // Build smarter queries — use exact page title and people names
+    // Add relevance check: result title must share a word with our query
+    const queries = [...new Set([pageTitle, ...allPeople.slice(0,2), ...qe.slice(0,2)])].filter(Boolean);
     let archiveDocs = [];
-    for (const q of queries.slice(0,3)) {
+    for (const q of queries.slice(0,4)) {
       if (archiveDocs.length >= 6) break;
       const data = await apiFetch(
         `https://archive.org/advancedsearch.php?q=${encodeURIComponent(q)}+mediatype:movies&fl[]=identifier,title,description&sort[]=downloads+desc&rows=4&output=json`
       ).catch(()=>({response:{docs:[]}}));
+      const qwords = q.toLowerCase().split(' ').filter(w=>w.length>3);
       for (const d of (data.response?.docs||[])) {
-        if (!archiveDocs.find(x=>x.identifier===d.identifier)) archiveDocs.push(d);
+        // Relevance check — title must share a meaningful word with query
+        const titleLower = (d.title||'').toLowerCase();
+        const relevant   = qwords.some(w => titleLower.includes(w));
+        if (relevant && !archiveDocs.find(x=>x.identifier===d.identifier)) archiveDocs.push(d);
       }
     }
     goodies.archiveVideo = archiveDocs.slice(0,5).map(d=>({ identifier:d.identifier, title:d.title }));
@@ -283,9 +289,11 @@ async function fetchGoodiesForEvent(ev) {
       year < 1750 ? 'Baroque' : year < 1820 ? 'Classical' : year < 1910 ? 'Romantic' : null;
     if (musicEpoch) {
       const data = await apiFetch(`https://api.openopus.org/composer/list/epoch/${musicEpoch}.json`).catch(()=>({composers:[]}));
+      // Tighten range — only composers who lived within 80 years of the event
+      // Prevents 1500s events getting 1700s Classical composers
       const pool = (data.composers||[]).filter(c => {
-        const born=parseInt(c.birth), died=parseInt(c.death)||9999;
-        return born<=year+100 && died>=year-100;
+        const born=parseInt(c.birth)||0, died=parseInt(c.death)||9999;
+        return born <= year + 80 && died >= year - 30;
       }).sort(()=>Math.random()-0.5).slice(0,8);
 
       const withAudio = [];
@@ -447,6 +455,8 @@ async function fetchGoodiesForEvent(ev) {
     } catch {}
   }
 
+  goodies._ready = true; // signals frontend that goodies are fully built
+  goodies._builtAt = new Date().toISOString();
   return goodies;
 }
 
@@ -558,41 +568,70 @@ async function buildDailyEvents() {
   return enriched;
 }
 
-async function ensureDailyCache() {
-  if (!redis) return;
-  const today    = getTodayPacific();
-  const cacheKey = `pable:events:${CACHE_VERSION}:${today}`;
-  const cached   = await redis.get(cacheKey);
-  if (cached) { console.log('Cache hit for', today); return; }
-  try {
-    // Phase 1: Build and cache events quickly (no goodies yet)
-    const events   = await buildDailyEvents();
-    const midnight = getPacificMidnight();
-    const ttl      = Math.floor((midnight - new Date()) / 1000);
-    await redis.setEx(cacheKey, Math.max(ttl, 3600), JSON.stringify(events));
-    console.log(`Cached ${events.length} events (TTL ${ttl}s)`);
-    // Phase 2: Build goodies in background — don't await, don't block
-    buildAllGoodiesBackground(events, today).catch(e => console.error('Goodies build error:', e.message));
-  } catch (e) { console.error('Build failed:', e.message); }
-}
-
-// Build goodies for each event in the background, one at a time
-async function buildAllGoodiesBackground(events, today) {
-  console.log('Building goodies in background...');
+// Build and cache ALL goodies for all events — blocks until complete
+// This is the only place goodies are ever built. Never triggered by a user request.
+async function buildAndCacheAllGoodies(events, today) {
+  const midnight = getPacificMidnight();
+  const ttl = Math.max(Math.floor((midnight - new Date()) / 1000), 3600);
   for (let i = 0; i < events.length; i++) {
-    const ev = events[i];
+    const ev        = events[i];
     const goodieKey = `pable:goodies:${CACHE_VERSION}:${today}:${i}`;
     const existing  = await redis.get(goodieKey).catch(()=>null);
-    if (existing) continue; // already built
+    if (existing) {
+      const g = JSON.parse(existing);
+      if (g._ready) { console.log(`  [${i+1}/${events.length}] Already cached: ${ev.pages?.[0]?.title||ev.year}`); continue; }
+    }
     try {
-      console.log(`  Goodies ${i+1}/${events.length}: ${ev.pages?.[0]?.title||ev.year}`);
+      console.log(`  [${i+1}/${events.length}] Building: ${ev.pages?.[0]?.title||ev.year}`);
       const goodies = await fetchGoodiesForEvent(ev);
-      const midnight = getPacificMidnight();
-      const ttl = Math.floor((midnight - new Date()) / 1000);
-      await redis.setEx(goodieKey, Math.max(ttl, 3600), JSON.stringify(goodies));
-    } catch (e) { console.error(`  Goodies error for event ${i}:`, e.message); }
+      await redis.setEx(goodieKey, ttl, JSON.stringify(goodies));
+    } catch (e) {
+      console.error(`  [${i+1}/${events.length}] Error: ${e.message}`);
+    }
   }
   console.log('All goodies built and cached.');
+}
+
+async function ensureDailyCache() {
+  if (!redis) return;
+  const today      = getTodayPacific();
+  const eventKey   = `pable:events:${CACHE_VERSION}:${today}`;
+  const goodie0Key = `pable:goodies:${CACHE_VERSION}:${today}:0`;
+
+  // Check if events AND goodies are already fully built
+  const [evCached, g0Cached] = await Promise.all([
+    redis.get(eventKey).catch(()=>null),
+    redis.get(goodie0Key).catch(()=>null)
+  ]);
+
+  if (evCached && g0Cached) {
+    const g0 = JSON.parse(g0Cached);
+    if (g0._ready) {
+      console.log('Full cache hit for', today, '— events + goodies ready');
+      return;
+    }
+  }
+
+  try {
+    // Build events first
+    let events;
+    if (evCached) {
+      events = JSON.parse(evCached);
+      console.log('Events already cached, rebuilding goodies only…');
+    } else {
+      console.log('Building events…');
+      events = await buildDailyEvents();
+      const midnight = getPacificMidnight();
+      const ttl = Math.max(Math.floor((midnight - new Date()) / 1000), 3600);
+      await redis.setEx(eventKey, ttl, JSON.stringify(events));
+      console.log(`Events cached (${events.length})`);
+    }
+
+    // Build ALL goodies — completely, before serving any user request
+    console.log('Building goodies for all events (this takes a few minutes)…');
+    await buildAndCacheAllGoodies(events, today);
+    console.log('✓ Daily cache complete — ready to serve');
+  } catch (e) { console.error('Cache build failed:', e.message); }
 }
 
 function schedulePacificMidnight() {
@@ -617,44 +656,23 @@ app.get('/api/events/today', async (req, res) => {
       const cached = await redis.get(cacheKey);
       if (cached) return res.json(JSON.parse(cached));
     }
-    const events = await buildDailyEvents();
-    if (redis) {
-      const midnight = getPacificMidnight();
-      const ttl = Math.floor((midnight - new Date()) / 1000);
-      await redis.setEx(cacheKey, Math.max(ttl,3600), JSON.stringify(events));
-      // Start building goodies in background
-      buildAllGoodiesBackground(events, today).catch(e => console.error('Goodies bg error:', e.message));
-    }
-    res.json(events);
+    // Cache miss — should not happen in normal operation
+    // ensureDailyCache() at startup guarantees cache is ready before first request
+    res.status(503).json({ error: 'Cache not ready yet — server is still building. Try again in a minute.' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Get pre-cached goodies for a specific event by index
+// Serve pre-cached goodies for a specific event — never built on demand
 app.get('/api/goodies/:index', async (req, res) => {
-  const today    = getTodayPacific();
-  const idx      = parseInt(req.params.index);
+  const today     = getTodayPacific();
+  const idx       = parseInt(req.params.index);
   const goodieKey = `pable:goodies:${CACHE_VERSION}:${today}:${idx}`;
   try {
     if (redis) {
       const cached = await redis.get(goodieKey);
       if (cached) return res.json(JSON.parse(cached));
     }
-    // Goodies not cached yet — get the event and build on demand (background already building)
-    const eventKey = `pable:events:${CACHE_VERSION}:${today}`;
-    const evCache  = redis ? await redis.get(eventKey).catch(()=>null) : null;
-    if (evCache) {
-      const events = JSON.parse(evCache);
-      if (events[idx]) {
-        const goodies = await fetchGoodiesForEvent(events[idx]);
-        if (redis) {
-          const midnight = getPacificMidnight();
-          const ttl = Math.floor((midnight - new Date()) / 1000);
-          await redis.setEx(goodieKey, Math.max(ttl,3600), JSON.stringify(goodies));
-        }
-        return res.json(goodies);
-      }
-    }
-    res.json({});
+    res.json({ _ready: false }); // not built yet
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -707,24 +725,26 @@ app.get('/api/cache/status', async (req, res) => {
   res.json(results);
 });
 
-// Cache clear + rebuild (fast — events only, goodies build in background)
+// Cache clear + full rebuild — this request blocks until ALL goodies are built
+// Expect this to take 3-5 minutes. Use only when you need a manual refresh.
 app.post('/api/cache/clear', async (req, res) => {
   if (!redis) return res.status(503).json({ error:'Redis not connected' });
   const today = getTodayPacific();
-  // Delete all event and goodie caches for today
+  // Clear all cached data
   for (const v of [CACHE_VERSION,'v11','v10','v9','v8','v7','v6','v5','v4','v3']) {
     await redis.del(`pable:events:${v}:${today}`).catch(()=>{});
-    // Delete goodie caches 0-24
     for (let i=0; i<25; i++) await redis.del(`pable:goodies:${v}:${today}:${i}`).catch(()=>{});
   }
   try {
+    // Build events
     const events   = await buildDailyEvents();
     const midnight = getPacificMidnight();
-    const ttl      = Math.floor((midnight - new Date()) / 1000);
-    await redis.setEx(`pable:events:${CACHE_VERSION}:${today}`, Math.max(ttl,3600), JSON.stringify(events));
-    // Build goodies in background — don't make the HTTP request wait
-    buildAllGoodiesBackground(events, today).catch(e => console.error('Goodies bg:', e.message));
-    res.json({ ok:true, built:events.length, ttl, message:'Goodies building in background — check /api/cache/status in 2-3 minutes' });
+    const ttl      = Math.max(Math.floor((midnight - new Date()) / 1000), 3600);
+    await redis.setEx(`pable:events:${CACHE_VERSION}:${today}`, ttl, JSON.stringify(events));
+    // Build ALL goodies synchronously — this request waits until complete
+    await buildAndCacheAllGoodies(events, today);
+    res.json({ ok:true, built:events.length, ttl, ready:true,
+      message:`All ${events.length} events and goodies fully cached.` });
   } catch (e) { res.status(500).json({ error:e.message }); }
 });
 

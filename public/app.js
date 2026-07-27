@@ -307,16 +307,16 @@ async function loadAllGoodies(ev) {
   const people    = ev.peopleSummaries || [];
   const entities  = ev.entities || { people: [] };
 
-  // Fetch pre-cached goodies from server (built at midnight, not on demand)
+  // Fetch pre-cached goodies — always ready, built at midnight server-side
   const cacheIdx = ev._cacheIndex ?? null;
   let cachedGoodies = ev.goodies || {};
-  if (cacheIdx !== null && !Object.keys(cachedGoodies).length) {
+
+  if (cacheIdx !== null && !cachedGoodies._ready) {
     try {
       const gr = await fetch(`/api/goodies/${cacheIdx}`);
       if (gr.ok) cachedGoodies = await gr.json();
-    } catch {}
+    } catch (e) { console.warn('Goodies fetch failed:', e.message); }
   }
-  // Override ev.goodies with freshly fetched data
   ev = { ...ev, goodies: cachedGoodies };
 
   const keyword     = pageTitle || title.split(' ').slice(0,5).join(' ');
