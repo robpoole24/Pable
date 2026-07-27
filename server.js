@@ -105,8 +105,25 @@ function extractEntities(article) {
     if (entities.people.length >= 8) break;
   }
 
-  // Deduplicate
-  entities.people = [...new Set(entities.people)].slice(0, 6);
+  // Deduplicate and filter — reject single-word names and common false positives
+  // "Adrian" from "Pope Adrian IV" should not drive book/coin queries
+  const SKIP_SINGLE = new Set([
+    'Adrian','Henry','Richard','John','Robert','William','Frederick','Stephen',
+    'Philip','Louis','Charles','Edward','Thomas','George','James','Peter','Paul',
+    'Francis','Martin','Gregory','Innocent','Alexander','Conrad','Otto','Rudolf',
+    'German','Norman','French','English','Italian','Spanish','Roman','Greek',
+    'Holy','Christian','Muslim','Jewish','Byzantine','Ottoman','Mongol','Saxon',
+    'Crusade','Empire','Kingdom','Republic','Church','Pope','King','Queen','Duke'
+  ]);
+
+  entities.people = [...new Set(entities.people)]
+    .filter(name => {
+      const words = name.trim().split(/\s+/);
+      if (words.length >= 2) return true; // Keep all multi-word names
+      // Single-word names: only keep if long enough and not a common false positive
+      return name.length >= 8 && !SKIP_SINGLE.has(name);
+    })
+    .slice(0, 6);
   return entities;
 }
 
@@ -302,7 +319,7 @@ async function buildDailyEvents() {
 async function ensureDailyEvents() {
   if (!redis) return;
   const today    = new Date().toISOString().split('T')[0];
-  const cacheKey = `pable:events:v9:${today}`;
+  const cacheKey = `pable:events:v10:${today}`;
   const cached   = await redis.get(cacheKey);
   if (cached) { console.log('Events cached for', today); return; }
   try {
@@ -331,7 +348,7 @@ scheduleMidnightRefresh();
 app.get('/api/events/today', async (req, res) => {
   try {
     const today    = new Date().toISOString().split('T')[0];
-    const cacheKey = `pable:events:v9:${today}`;
+    const cacheKey = `pable:events:v10:${today}`;
     if (redis) {
       const cached = await redis.get(cacheKey);
       if (cached) return res.json(JSON.parse(cached));
@@ -556,7 +573,7 @@ app.post('/api/cache/clear', async (req, res) => {
     const now = new Date(), midnight = new Date(now);
     midnight.setHours(24,0,0,0);
     const ttl = Math.floor((midnight-now)/1000);
-    await redis.setEx(`pable:events:v9:${today}`, ttl, JSON.stringify(events));
+    await redis.setEx(`pable:events:v10:${today}`, ttl, JSON.stringify(events));
     res.json({ ok: true, built: events.length, ttl });
   } catch (e) {
     res.status(500).json({ error: e.message });

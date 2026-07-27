@@ -327,10 +327,31 @@ async function loadAllGoodies(ev) {
   const fallbackQuery1 = curatedPeopleNames[0] || titlePeople[0] || keyword.split(' ').slice(0,3).join(' ');
   const fallbackQuery2 = curatedPeopleNames[1] || `${eraLabel(year)} history ${keyword.split(' ').slice(0,2).join(' ')}`;
 
+  // Pre-create ordered slots — goodies fill their slot when ready
+  // This guarantees consistent order regardless of API response timing
+  const GOODIE_ORDER = [
+    'g-video-curated', 'g-figures', 'g-images', 'g-met',
+    'g-coins', 'g-yt-docs', 'g-yt-news', 'g-archive-video',
+    'g-archive-audio', 'g-newspapers', 'g-primary', 'g-etymology',
+    'g-thesaurus', 'g-life', 'g-music', 'g-books', 'g-inflation',
+    'g-map', 'g-nasa', 'g-gdelt', 'g-guardian', 'g-newsdata', 'g-texts'
+  ];
   container.innerHTML = `
     <div class="goodies-title">Pable's Goodies</div>
-    <div class="goodies-reveal" id="goodies-grid"></div>
+    <div class="goodies-reveal" id="goodies-grid">
+      ${GOODIE_ORDER.map(id => `<div id="${id}"></div>`).join('')}
+    </div>
   `;
+
+  // Helper: fill a specific slot
+  function fillSlot(slotId, icon, title, bodyHTML, sourceNote='') {
+    const slot = document.getElementById(slotId);
+    if (!slot) return;
+    slot.innerHTML = '';
+    const card = goodieCard(icon, title, bodyHTML, sourceNote);
+    slot.appendChild(card);
+  }
+
   const grid = document.getElementById('goodies-grid');
 
   // Merge curated people names into query list — these are the most precise
@@ -496,7 +517,7 @@ async function loadPeopleDossiers(grid, people, year, curatedPeople=[]) {
             ${p.url ? `<a href="${p.url}" target="_blank" class="archive-link">Wikipedia →</a>` : ''}
           </div>
         </div>`).join('');
-      appendGoodie(grid, '👑', 'Key Figures', html, 'Wikipedia');
+      fillSlot('g-figures', '👑', 'Key Figures', html, 'Wikipedia');
       return;
     }
   }
@@ -521,7 +542,7 @@ async function loadPeopleDossiers(grid, people, year, curatedPeople=[]) {
         ${p.url ? `<a href="${p.url}" target="_blank" class="archive-link">Wikipedia →</a>` : ''}
       </div>
     </div>`).join('');
-  appendGoodie(grid, '👑', 'Key Figures', html, 'Wikipedia');
+  fillSlot('g-figures', '👑', 'Key Figures', html, 'Wikipedia');
 }
 
 // ─── GOODIE 2: IMAGES ─────────────────────────────────────────────────
@@ -577,7 +598,7 @@ async function loadImages(grid, keyword, year, isSpace, people=[]) {
       <img src="${img.url}" alt="${img.caption}" loading="lazy" onerror="this.closest('.image-item').style.display='none'"/>
       <div class="image-caption">${img.caption}<span class="img-source">${img.source||''}</span></div>
     </div>`).join('')}</div>`;
-  appendGoodie(grid,'🖼','Images & Artwork',html,'The Met · Wikimedia Commons · DPLA · Smithsonian · Europeana');
+  fillSlot('g-images','🖼','Images & Artwork',html,'The Met · Wikimedia Commons · DPLA · Smithsonian · Europeana');
 }
 
 async function fetchWikimediaImages(keyword) {
@@ -740,8 +761,7 @@ async function loadMetArtifacts(grid, keyword, year, people=[]) {
       </div>
     </div>`).join('');
 
-  appendGoodie(grid,'🏛️','The Met Collection',html,
-    'The Metropolitan Museum of Art · Public Domain · metmuseum.org');
+  fillSlot('g-met','🏛️','The Met Collection',html,'The Metropolitan Museum of Art · Public Domain · metmuseum.org');
 }
 
 // ─── GOODIE 0: CURATED VIDEOS ────────────────────────────────────────
@@ -759,7 +779,7 @@ async function loadCuratedVideos(grid, videos) {
         <div class="video-source">YouTube · ${v.type === 'short' ? 'Short' : v.type === 'speech' ? 'Primary Source' : 'Documentary'}</div>
       </div>
     </a>`).join('');
-  appendGoodie(grid, '🎬', 'Video — This Event', html, 'YouTube · Curated');
+  fillSlot('g-video-curated', '🎬', 'Video — This Event', html, 'YouTube · Curated');
 }
 
 // ─── GOODIE 3: COINS ─────────────────────────────────────────────────
@@ -778,7 +798,7 @@ async function loadCoins(grid, keyword, people=[], isRoman=false, curatedCoins=[
             <img src="${c.url}" alt="${c.caption}" loading="lazy" onerror="this.closest('.image-item').style.display='none'"/>
             <div class="image-caption">${c.caption}<span class="img-source">${c.source||''}</span></div>
           </div>`).join('')}</div>`;
-      appendGoodie(grid,'🪙','Coins of the Era',html,'Curated · Wikimedia Commons');
+      fillSlot('g-coins','🪙','Coins of the Era',html,'Curated · Wikimedia Commons');
       return;
     }
   }
@@ -855,7 +875,7 @@ async function loadCoins(grid, keyword, people=[], isRoman=false, curatedCoins=[
         <img src="${c.url}" alt="${c.caption}" loading="lazy" onerror="this.closest('.image-item').style.display='none'"/>
         <div class="image-caption">${c.caption}<span class="img-source">${c.source||''}</span></div>
       </div>`).join('')}</div>`;
-  appendGoodie(grid,'🪙','Coins of the Era',html,'Numista · Wikimedia Numismatic · OCRE (Roman Coins)');
+  fillSlot('g-coins','🪙','Coins of the Era',html,'Numista · Wikimedia Numismatic · OCRE (Roman Coins)');
 }
 
 // ─── GOODIE 4: YOUTUBE DOCS ───────────────────────────────────────────
@@ -874,7 +894,7 @@ async function loadYouTubeDocs(grid, keyword, fallback1, fallback2, fallback3=nu
           <div class="video-source">YouTube</div>
         </div>
       </a>`).join('');
-    appendGoodie(grid,'🎬','Documentaries & Educational Video',html,'YouTube Data API v3');
+    fillSlot('g-yt-docs','🎬','Documentaries & Educational Video',html,'YouTube Data API v3');
   } catch {}
 }
 
@@ -897,7 +917,7 @@ async function loadYouTubeNews(grid, keyword, fallback1) {
           <div class="video-source">YouTube · News</div>
         </div>
       </a>`).join('');
-    appendGoodie(grid,'📺','News Coverage',html,'YouTube Data API v3');
+    fillSlot('g-yt-news','📺','News Coverage',html,'YouTube Data API v3');
   } catch {}
 }
 
@@ -926,7 +946,7 @@ async function loadArchiveVideo(grid, keyword, queries=[]) {
           <div class="video-source">Internet Archive · Free</div>
         </div>
       </a>`).join('');
-    appendGoodie(grid,'📽','Archival Film',html,'Internet Archive (archive.org)');
+    fillSlot('g-archive-video','📽','Archival Film',html,'Internet Archive (archive.org)');
   } catch {}
 }
 
@@ -959,7 +979,7 @@ async function loadArchiveAudio(grid, keyword, queries=[]) {
           ? `<audio controls preload="metadata" style="width:100%;margin-top:6px"><source src="/api/audio/proxy?url=${encodeURIComponent(a.audioUrl)}" type="audio/mpeg"></audio>`
           : `<a href="https://archive.org/details/${a.identifier}" target="_blank" class="archive-link">Listen on archive.org →</a>`}
       </div>`).join('');
-    appendGoodie(grid,'🔊','Voices & Recordings',html,'Internet Archive (archive.org)');
+    fillSlot('g-archive-audio','🔊','Voices & Recordings',html,'Internet Archive (archive.org)');
   } catch {}
 }
 
@@ -985,7 +1005,7 @@ async function loadNewspapers(grid, keyword, year) {
         <div class="newspaper-meta">${r.date||''} · ${r.partof?.[0]||'Chronicling America'}</div>
         ${r.description?.[0]?`<div class="newspaper-snippet">${r.description[0].substring(0,160)}…</div>`:''}
       </div>`).join('');
-    appendGoodie(grid,'📰','Historic Newspapers',html,'Chronicling America · Library of Congress · 1770–1963');
+    fillSlot('g-newspapers','📰','Historic Newspapers',html,'Chronicling America · Library of Congress · 1770–1963');
   } catch {}
 }
 
@@ -1043,7 +1063,7 @@ async function loadPrimarySources(grid, keyword, year, people=[]) {
         <a href="${b.url}" target="_blank" class="archive-link" style="font-size:11px;margin-top:4px;display:inline-block">📖 Read free →</a>
       </div>
     </div>`).join('');
-  appendGoodie(grid,'📜','Primary Sources & Chronicles',html,'Project Gutenberg · Internet Archive');
+  fillSlot('g-primary','📜','Primary Sources & Chronicles',html,'Project Gutenberg · Internet Archive');
 }
 
 // ─── GOODIE 10: ETYMOLOGY ────────────────────────────────────────────
@@ -1067,7 +1087,7 @@ async function loadEtymology(grid, terms) {
       <div class="word-etymology">⟐ ${e.etymology}</div>
       ${e.definition?`<div class="word-definition">${e.definition}</div>`:''}
     </div>`).join('');
-  appendGoodie(grid,'📜','Words of the Era',html,'Merriam-Webster Collegiate Dictionary');
+  fillSlot('g-etymology','📜','Words of the Era',html,'Merriam-Webster Collegiate Dictionary');
 }
 
 // ─── GOODIE 11: THESAURUS ────────────────────────────────────────────
@@ -1087,7 +1107,7 @@ async function loadThesaurus(grid, word) {
       ${ants.length?`<div style="margin-top:8px"><span class="word-pos">Antonyms</span>
         <div class="thes-words">${ants.map(s=>`<span class="thes-word antonym">${s}</span>`).join('')}</div>
       </div>`:''}`;
-    appendGoodie(grid,'🔤','Period Thesaurus',html,'Merriam-Webster Thesaurus');
+    fillSlot('g-thesaurus','🔤','Period Thesaurus',html,'Merriam-Webster Thesaurus');
   } catch {}
 }
 
@@ -1180,7 +1200,7 @@ async function loadLifeAndSociety(grid, keyword, year, fullText, curatedPeopleNa
         <div class="society-extract">${s.extract}</div>
         ${s.url ? `<a href="${s.url}" target="_blank" class="archive-link">Read more →</a>` : ''}
       </div>`).join('')}`;
-  appendGoodie(grid, '🏘️', 'Life & Society', html, 'Wikipedia');
+  fillSlot('g-life', '🏘️', 'Life & Society', html, 'Wikipedia');
 }
 
 // ─── GOODIE 13: MUSIC ────────────────────────────────────────────────
@@ -1216,7 +1236,7 @@ async function loadMusic(grid, year, keyword) {
                   </audio>
                 </div>
               </div>`).join('');
-            appendGoodie(grid, '🥁', 'Music of the Colonial Era', html, 'Internet Archive');
+            fillSlot('g-music', '🥁', 'Music of the Colonial Era', html, 'Internet Archive');
             // Still continue to load classical composers below
           }
         }
@@ -1275,7 +1295,7 @@ async function loadMusic(grid, year, keyword) {
                 : `<div class="music-note">Search IMSLP.org for free scores</div>`}
           </div>
         </div>`).join('');
-      appendGoodie(grid,'🎵',`Music of the ${epoch}`,html,'Open Opus · Internet Archive · IMSLP');
+      fillSlot('g-music','🎵',`Music of the ${epoch}`,html,'Open Opus · Internet Archive · IMSLP');
     } catch {}
   } else {
     // Post-1910 — MusicBrainz
@@ -1292,7 +1312,7 @@ async function loadMusic(grid, year, keyword) {
             <div class="music-composer">${r['artist-credit']?.[0]?.artist?.name||'Various'}</div>
           </div>
         </div>`).join('');
-      appendGoodie(grid,'🎵','Music',html,'MusicBrainz');
+      fillSlot('g-music','🎵','Music',html,'MusicBrainz');
     } catch {}
   }
 }
@@ -1369,7 +1389,7 @@ async function loadBooks(grid, keyword, eventTitle, people=[], year=0, curatedBo
         <div class="book-note" style="font-size:10px;opacity:0.6;margin-top:2px">${b.source}</div>
       </div>
     </div>`).join('');
-  appendGoodie(grid,'📚','Reading List',html,'Open Library · Google Books');
+  fillSlot('g-books','📚','Reading List',html,'Open Library · Google Books');
 }
 
 // ─── GOODIE 15: INFLATION ────────────────────────────────────────────
@@ -1381,7 +1401,7 @@ async function loadInflation(grid, mention, year) {
     const ys=Object.keys(anchors).map(Number).sort((a,b)=>a-b);
     const nearest=ys.reduce((p,c)=>Math.abs(c-year)<Math.abs(p-year)?c:p);
     const mult=Math.round(314/anchors[nearest]);
-    appendGoodie(grid,'💰','What It Cost — Then & Now',`
+    fillSlot('g-inflation','💰','What It Cost — Then & Now',`
       <div class="money-display">
         <div class="money-mention">"${mention}"</div>
         <div class="money-original">as mentioned · ${year}</div>
@@ -1400,7 +1420,7 @@ async function loadInflation(grid, mention, year) {
     const mod=cpiCache[cpiCache.length-1];
     if (!ev||!mod||ev.value==='.'||mod.value==='.') return;
     const mult=(parseFloat(mod.value)/parseFloat(ev.value)).toFixed(1);
-    appendGoodie(grid,'💰','What It Cost — Then & Now',`
+    fillSlot('g-inflation','💰','What It Cost — Then & Now',`
       <div class="money-display">
         <div class="money-mention">"${mention}"</div>
         <div class="money-original">as mentioned · ${year}</div>
@@ -1453,7 +1473,7 @@ async function loadNASA(grid, keyword, year) {
         <img src="${i.links[0].href}" loading="lazy" onerror="this.closest('.image-item').style.display='none'"/>
         <div class="image-caption">${(i.data?.[0]?.title||'NASA').substring(0,60)}</div>
       </div>`).join('')}</div>`;
-    appendGoodie(grid,'🚀','NASA Imagery',html,'NASA Image and Video Library · nasa.gov');
+    fillSlot('g-nasa','🚀','NASA Imagery',html,'NASA Image and Video Library · nasa.gov');
   } catch {}
 }
 
@@ -1585,7 +1605,7 @@ async function loadGDELT(grid, queries) {
             <div class="video-source">GDELT · Internet Archive TV Archive</div>
           </div>
         </a>`).join('');
-      appendGoodie(grid, '📡', 'Broadcast News Coverage', html, 'GDELT Project · TV News Archive (2009–2024)');
+      fillSlot('g-gdelt', '📡', 'Broadcast News Coverage', html, 'GDELT Project · TV News Archive (2009–2024)');
       return;
     }
   } catch {}
@@ -1613,7 +1633,7 @@ async function loadGuardian(grid, queries) {
             <div class="newspaper-meta">${r.webPublicationDate?.substring(0,10) || ''} · The Guardian</div>
             ${r.fields?.trailText ? `<div class="newspaper-snippet">${r.fields.trailText.replace(/<[^>]+>/g,'').substring(0,120)}…</div>` : ''}
           </div>`).join('');
-        appendGoodie(grid, '📰', 'The Guardian', html, 'The Guardian Open Platform');
+        fillSlot('g-guardian', '📰', 'The Guardian', html, 'The Guardian Open Platform');
         return;
       }
     }
@@ -1644,7 +1664,7 @@ async function loadNewsData(grid, queries) {
           <div class="newspaper-meta">${a.pubDate?.substring(0,10) || ''} · ${a.source_id || 'NewsData'}</div>
           ${a.description ? `<div class="newspaper-snippet">${a.description.substring(0,120)}…</div>` : ''}
         </div>`).join('');
-      appendGoodie(grid, '🗞️', 'News Coverage', html, 'NewsData.io');
+      fillSlot('g-newsdata', '🗞️', 'News Coverage', html, 'NewsData.io');
       return;
     }
   } catch {}
@@ -1697,7 +1717,7 @@ async function loadArchiveTexts(grid, queries, year) {
         </div>`).join('');
 
       const hasMags = mags.length > 0;
-      appendGoodie(grid, '📖', hasMags ? 'Magazines & Print Media' : 'Historical Texts & Documents', html,
+      fillSlot('g-texts', '📖', hasMags ? 'Magazines & Print Media' : 'Historical Texts & Documents', html,
         'Internet Archive · ' + (hasMags ? 'Magazine Rack · ' : '') + 'Open Library');
       return;
     }
