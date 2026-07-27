@@ -29,6 +29,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Redis ────────────────────────────────────────────────────────────
 let redis;
+let buildInProgress = false; // mutex — only one build at a time
+
 (async () => {
   try {
     redis = createClient({ url: process.env.REDIS_URL });
@@ -48,28 +50,47 @@ async function apiFetch(url, opts = {}) {
   return r.json();
 }
 
-// Pacific midnight — new day starts at 00:00 PST/PDT
-function getPacificMidnight() {
-  // Get current time in Pacific
+// Pacific time helpers — all dates/times relative to America/Los_Angeles
+function getPacificDateParts() {
   const now = new Date();
-  const pacificStr = now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
-  const pacific = new Date(pacificStr);
-  // Next midnight Pacific
-  const midnight = new Date(pacificStr);
-  midnight.setHours(24, 0, 5, 0);
-  const diffMs = midnight - pacific;
-  return new Date(now.getTime() + diffMs);
+  // toLocaleDateString with en-CA gives YYYY-MM-DD format
+  const date = now.toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+  const [yyyy, mm, dd] = date.split('-');
+  return { yyyy, mm, dd, date };
 }
 
 function getTodayPacific() {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+  return getPacificDateParts().date; // YYYY-MM-DD
 }
 
 function getMonthDayPacific() {
-  const d = new Date();
-  const mm = String(d.toLocaleString('en-US', { timeZone: 'America/Los_Angeles', month: 'numeric' })).padStart(2,'0');
-  const dd = String(d.toLocaleString('en-US', { timeZone: 'America/Los_Angeles', day: 'numeric' })).padStart(2,'0');
+  const { mm, dd } = getPacificDateParts();
   return { mm, dd };
+}
+
+function getPacificMidnight() {
+  // Find next midnight in Pacific time
+  // Get current Pacific date, add one day, that's midnight Pacific
+  const { date } = getPacificDateParts();
+  const [yyyy, mm, dd] = date.split('-').map(Number);
+  // Next day in Pacific
+  const nextDay = new Date(yyyy, mm-1, dd+1, 0, 0, 5, 0);
+  // This is midnight Pacific in local time — convert to UTC
+  // by using the Pacific timezone offset
+  const nextDayStr = `${yyyy}-${String(mm).padStart(2,'0')}-${String(dd+1).padStart(2,'0')}T00:00:05`;
+  // Parse as Pacific time
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+  });
+  // Simpler: find ms until next Pacific midnight
+  const now = new Date();
+  const pacificNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
+  const pacificMidnight = new Date(pacificNow);
+  pacificMidnight.setHours(24, 0, 5, 0);
+  const msUntilMidnight = pacificMidnight - pacificNow;
+  return new Date(now.getTime() + msUntilMidnight);
 }
 
 const CACHE_VERSION = 'v11';
@@ -594,57 +615,64 @@ async function buildAndCacheAllGoodies(events, today) {
 
 async function ensureDailyCache() {
   if (!redis) return;
-  const today      = getTodayPacific();
-  const eventKey   = `pable:events:${CACHE_VERSION}:${today}`;
-  const goodie0Key = `pable:goodies:${CACHE_VERSION}:${today}:0`;
-
-  // Check if events AND goodies are already fully built
-  const [evCached, g0Cached] = await Promise.all([
-    redis.get(eventKey).catch(()=>null),
-    redis.get(goodie0Key).catch(()=>null)
-  ]);
-
-  if (evCached && g0Cached) {
-    const g0 = JSON.parse(g0Cached);
-    if (g0._ready) {
-      console.log('Full cache hit for', today, '— events + goodies ready');
-      return;
-    }
-  }
-
+  if (buildInProgress) { console.log('Build already in progress — skipping'); return; }
+  buildInProgress = true;
+  const today = getTodayPacific();
   try {
-    // Build events first
+    const eventKey   = `pable:events:${CACHE_VERSION}:${today}`;
+    const goodie0Key = `pable:goodies:${CACHE_VERSION}:${today}:0`;
+
+    // Check if everything is already fully built
+    const [evCached, g0Cached] = await Promise.all([
+      redis.get(eventKey).catch(()=>null),
+      redis.get(goodie0Key).catch(()=>null)
+    ]);
+
+    if (evCached && g0Cached) {
+      const g0 = JSON.parse(g0Cached);
+      if (g0._ready) {
+        console.log('Full cache hit for', today, '— events + goodies ready');
+        return;
+      }
+    }
+
+    // Build events if needed
     let events;
     if (evCached) {
       events = JSON.parse(evCached);
-      console.log('Events already cached, rebuilding goodies only…');
+      console.log('Events already cached, building goodies…');
     } else {
       console.log('Building events…');
       events = await buildDailyEvents();
-      const midnight = getPacificMidnight();
-      const ttl = Math.max(Math.floor((midnight - new Date()) / 1000), 3600);
+      const ttl = Math.max(Math.floor((getPacificMidnight() - new Date()) / 1000), 3600);
       await redis.setEx(eventKey, ttl, JSON.stringify(events));
       console.log(`Events cached (${events.length})`);
     }
 
-    // Build ALL goodies — completely, before serving any user request
-    console.log('Building goodies for all events (this takes a few minutes)…');
+    // Build ALL goodies completely before serving users
+    console.log('Building goodies for all events…');
     await buildAndCacheAllGoodies(events, today);
     console.log('✓ Daily cache complete — ready to serve');
-  } catch (e) { console.error('Cache build failed:', e.message); }
+
+  } catch (e) {
+    console.error('Cache build failed:', e.message);
+  } finally {
+    buildInProgress = false;
+  }
 }
 
 function schedulePacificMidnight() {
   const midnight = getPacificMidnight();
-  const ms = midnight - new Date();
-  console.log(`Next Pacific midnight refresh in ${Math.round(ms/3600000)}h`);
+  const ms = Math.max(midnight - new Date(), 60000); // at least 1 min gap
+  console.log(`Next Pacific midnight refresh in ${Math.round(ms/3600000 * 10)/10}h`);
   setTimeout(async () => {
     console.log('Pacific midnight — rebuilding daily events');
     await ensureDailyCache();
     schedulePacificMidnight();
   }, ms);
 }
-schedulePacificMidnight();
+// Delay scheduler start by 10s to avoid racing with startup build
+setTimeout(schedulePacificMidnight, 10000);
 
 // ─── Routes ───────────────────────────────────────────────────────────
 
