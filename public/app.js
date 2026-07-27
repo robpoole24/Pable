@@ -292,7 +292,8 @@ function breakSeal() {
   }, 3000); // exactly matches GIF duration
 }
 
-// ─── LOAD ALL GOODIES ─────────────────────────────────────────────────
+// ─── LOAD ALL GOODIES — uses server-side pre-cached data ─────────────
+// All API calls happened at midnight server-side. We just render what's cached.
 async function loadAllGoodies(ev) {
   try {
   const container = document.getElementById('goodies-container');
@@ -355,65 +356,180 @@ async function loadAllGoodies(ev) {
   const isModern = year >= 1950;
   const hasNewspaper = year >= 1770 && year <= 1963;
 
-  // Fire all in parallel — each appends itself when ready
-  const loaders = [
-    // 0. Curated videos (specific known videos for this event)
-    curated.videos?.length ? loadCuratedVideos(grid, curated.videos) : null,
-    // 1. Key figures dossiers (people cards) — curated first, API fallback
-    loadPeopleDossiers(grid, people, year, curated.people),
-    // 2. Images — use full page title + specific figure names
-    loadImages(grid, keyword, year, isSpace, queryPeople.map(n => n.includes(' ') ? n : keyword)),
-    // 2b. Met Museum dedicated goodie
-    loadMetArtifacts(grid, keyword, year, queryPeople),
-    // 3. Coins — curated coins first, then API with curated people names
-    // Only load coins if: curated coins exist, OR it's ancient/Roman, OR it's medieval with specific people to search
-    (curated.coins?.length || isRoman || (isMedieval && queryPeople.length)) ? loadCoins(grid, keyword, queryPeople, isRoman, curated.coins) : null,
-    // 4. YouTube documentaries (layered queries)
-    // YouTube — use all query expansion variants for maximum coverage
-    loadYouTubeDocs(grid,
-      queryExpansion[0] || keyword,
-      queryExpansion[1] || fallbackQuery1,
-      queryExpansion[2] || fallbackQuery2,
-      queryExpansion[3] || null
-    ),
-    // 5. YouTube news (post-1950)
-    hasNewsVideo ? loadYouTubeNews(grid, keyword, fallbackQuery1) : null,
-    // 6. Internet Archive video — use full query expansion
-    loadArchiveVideo(grid, keyword, queryExpansion),
-    // 7. Audio (post-1877) — use query expansion for better results
-    hasRecording ? loadArchiveAudio(grid, keyword, queryExpansion) : null,
-    // 8. Historic newspapers (1770–1963)
-    hasNewspaper ? loadNewspapers(grid, keyword, year) : null,
-    // 9. Primary sources / chronicles (pre-1600)
-    year < 1600 ? loadPrimarySources(grid, keyword, year, queryPeople) : null,
-    // 10. Etymology (archaic terms only)
-    archaicTerms.length ? loadEtymology(grid, archaicTerms) : null,
-    // 11. Thesaurus
-    // Thesaurus only for words in our archaic set (not modern common words)
-    (archaicTerms.length && ARCHAIC_WORDS.has(archaicTerms[0])) ? loadThesaurus(grid, archaicTerms[0]) : null,
-    // 12. Life & Society context
-    loadLifeAndSociety(grid, keyword, year, fullText, curatedPeopleNames),
-    // 13. Music
-    loadMusic(grid, year, keyword),
-    // 14. Books (API results + curated known works)
-    loadBooks(grid, keyword, title, queryPeople, year, curated.books),
-    // 15. Inflation (only if currency mentioned)
-    currencyMention ? loadInflation(grid, currencyMention, year) : null,
-    // 16. Map
-    coords ? loadMap(grid, coords, keyword, year, ev.infoboxMapUrl) : null,
-    // 17. NASA imagery (space events)
-    isSpace ? loadNASA(grid, keyword, year) : null,
-    // 18. GDELT broadcast news clips (post-2009 events)
-    year >= 2009 ? loadGDELT(grid, queryExpansion) : null,
-    // 19. Guardian news coverage
-    year >= 1999 ? loadGuardian(grid, queryExpansion) : null,
-    // 20. NewsData.io historical news + video
-    year >= 1950 ? loadNewsData(grid, queryExpansion) : null,
-    // 21. Internet Archive texts & Magazine Rack
-    loadArchiveTexts(grid, queryExpansion, year),
-  ].filter(Boolean);
+  // Render from pre-cached server-side goodies — no API calls needed
+  const g = ev.goodies || {};
+  const renderTasks = [];
 
-  await Promise.allSettled(loaders);
+  // 0. Curated videos
+  if (curated.videos?.length) renderTasks.push(loadCuratedVideos(grid, curated.videos));
+
+  // 1. Key figures
+  renderTasks.push(loadPeopleDossiers(grid, people, year, curated.people));
+
+  // 2. Images (cached from server)
+  if (g.images?.length || g.dplaImages?.length) {
+    const imgs = [...(g.images||[]), ...(g.dplaImages||[])].slice(0,10);
+    const html = `<div class="images-grid">${imgs.map(img=>`
+      <div class="image-item">
+        <img src="${toHttps(img.url)}" alt="${img.caption||''}" loading="lazy"
+          onerror="this.closest('.image-item').style.display='none'"/>
+        <div class="image-caption">${img.caption||''}<span class="img-source">${img.source||''}</span></div>
+      </div>`).join('')}</div>`;
+    fillSlot('g-images','🖼','Images & Artwork',html,'Wikimedia Commons · DPLA · Smithsonian');
+  }
+
+  // 3. Coins (cached)
+  if (g.coins?.length) {
+    const html = `<p class="goodie-context">Coinage from the rulers and regions involved in this event.</p>
+      <div class="images-grid">${g.coins.map(c=>`
+        <div class="image-item">
+          <img src="${toHttps(c.url)}" alt="${c.caption||''}" loading="lazy"
+            onerror="this.closest('.image-item').style.display='none'"/>
+          <div class="image-caption">${c.caption||''}<span class="img-source">${c.source||''}</span></div>
+        </div>`).join('')}</div>`;
+    fillSlot('g-coins','🪙','Coins of the Era',html,'Numista · Wikimedia · OCRE');
+  }
+
+  // 4. YouTube videos (cached)
+  if (g.youtubeVideos?.length) {
+    const html = g.youtubeVideos.map(v=>`
+      <a href="https://youtube.com/watch?v=${v.id}" target="_blank" class="video-item">
+        <img class="video-thumb-img" src="${toHttps(v.thumb)}" alt="" onerror="this.style.display='none'"/>
+        <div>
+          <div class="video-title">${(v.title||'').substring(0,90)}</div>
+          <div class="video-channel">${v.channel||''}</div>
+          <div class="video-source">YouTube</div>
+        </div>
+      </a>`).join('');
+    fillSlot('g-yt-docs','🎬','Documentaries & Video',html,'YouTube Data API v3');
+  }
+
+  // 5. Archive video (cached)
+  if (g.archiveVideo?.length) {
+    const html = g.archiveVideo.map(v=>`
+      <a href="https://archive.org/details/${v.identifier}" target="_blank" class="video-item">
+        <div class="video-thumb-placeholder">▶</div>
+        <div>
+          <div class="video-title">${(v.title||'').substring(0,90)}</div>
+          <div class="video-source">Internet Archive · Free</div>
+        </div>
+      </a>`).join('');
+    fillSlot('g-archive-video','📽','Archival Film',html,'Internet Archive (archive.org)');
+  }
+
+  // 6. Archive audio (cached)
+  if (g.archiveAudio?.length) {
+    const html = g.archiveAudio.map(a=>`
+      <div class="audio-item">
+        <div class="audio-title">${(a.title||'').substring(0,80)}</div>
+        <audio controls preload="metadata" style="width:100%;margin-top:6px">
+          <source src="/api/audio/proxy?url=${encodeURIComponent(a.audioUrl)}" type="audio/mpeg">
+        </audio>
+      </div>`).join('');
+    fillSlot('g-archive-audio','🔊','Voices & Recordings',html,'Internet Archive (archive.org)');
+  }
+
+  // 7. Newspapers (cached)
+  if (g.newspapers?.length) {
+    const html = g.newspapers.map(r=>`
+      <div class="newspaper-item">
+        ${r.imageUrl?`<a href="${r.url||'#'}" target="_blank" class="newspaper-page-link">
+          <img src="${toHttps(r.imageUrl)}" class="newspaper-thumb" loading="lazy" onerror="this.style.display='none'"/>
+          <div class="newspaper-zoom">🔍 Click to read</div></a>`:''}
+        <div class="newspaper-title"><a href="${r.url||'#'}" target="_blank">${(r.title||'').substring(0,80)}</a></div>
+        <div class="newspaper-meta">${r.date||''} · ${r.partof||'Chronicling America'}</div>
+        ${r.snippet?`<div class="newspaper-snippet">${r.snippet.substring(0,160)}…</div>`:''}
+      </div>`).join('');
+    fillSlot('g-newspapers','📰','Historic Newspapers',html,'Chronicling America · Library of Congress · 1770–1963');
+  }
+
+  // 8. Primary sources (cached)
+  if (g.primarySources?.length) {
+    const html = g.primarySources.map(b=>`
+      <div class="book-item">
+        <div class="book-spine" style="background:#8B4513"></div>
+        <div style="flex:1">
+          <div class="book-title"><a href="${b.url}" target="_blank">${b.title}</a></div>
+          <div class="book-author">${b.author}</div>
+          <span class="book-type">${b.source} · Free to Read</span>
+          <a href="${b.url}" target="_blank" class="archive-link" style="font-size:11px;display:inline-block;margin-top:4px">📖 Read free →</a>
+        </div>
+      </div>`).join('');
+    fillSlot('g-primary','📜','Primary Sources & Chronicles',html,'Project Gutenberg');
+  }
+
+  // 9. Etymology (still client-side — lightweight MW calls)
+  if (archaicTerms.length) renderTasks.push(loadEtymology(grid, archaicTerms));
+  if (archaicTerms.length && ARCHAIC_WORDS.has(archaicTerms[0])) renderTasks.push(loadThesaurus(grid, archaicTerms[0]));
+
+  // 10. Life & Society (client-side Wikipedia — fast, no quota)
+  renderTasks.push(loadLifeAndSociety(grid, keyword, year, fullText, curatedPeopleNames));
+
+  // 11. Music (cached)
+  if (g.music?.composers?.length) {
+    const { epoch, composers } = g.music;
+    const html = composers.map(c=>`
+      <div class="music-item">
+        ${c.portrait?`<img src="${toHttps(c.portrait)}" class="composer-portrait" onerror="this.style.display='none'"/>`:'<div class="music-icon">♪</div>'}
+        <div style="flex:1">
+          <div class="music-title">${c.name}</div>
+          <div class="music-composer">${epoch} · ${(c.birth||'?').substring(0,4)}–${(c.death||'present').substring(0,4)}</div>
+          ${c.audioUrl
+            ? `<audio controls preload="metadata" style="width:100%;margin-top:4px">
+                <source src="/api/audio/proxy?url=${encodeURIComponent(c.audioUrl)}" type="audio/mpeg">
+               </audio>`
+            : c.archiveId
+              ? `<a href="https://archive.org/details/${c.archiveId}" target="_blank" class="archive-link">Listen on archive.org →</a>`
+              : ''}
+        </div>
+      </div>`).join('');
+    fillSlot('g-music','🎵',`Music of the ${epoch}`,html,'Open Opus · Internet Archive');
+  }
+
+  // 12. Books (cached)
+  if (g.books?.length) {
+    const colors = ['#8B4513','#4A3728','#2C1A0E','#A07840','#6B3A2A','#3D2B1A'];
+    const html = g.books.map((b,i)=>`
+      <div class="book-item">
+        <div class="book-cover">
+          ${b.coverUrl
+            ? `<img src="${toHttps(b.coverUrl)}" alt="${b.title||''}" loading="lazy"
+                onerror="this.parentElement.innerHTML='<div class=\'book-cover-placeholder\' style=\'background:${colors[i%colors.length]}\'></div>'">`
+            : `<div class="book-cover-placeholder" style="background:${colors[i%colors.length]}"></div>`}
+        </div>
+        <div style="flex:1">
+          <div class="book-title">${b.url?`<a href="${b.url}" target="_blank">${b.title}</a>`:b.title}</div>
+          <div class="book-author">${b.author||''}${b.year?' · '+b.year:''}</div>
+          ${b.url&&(b.source==='Project Gutenberg'||b.source==='Open Library'||b.source==='Curated')
+            ? `<a href="${b.url}" target="_blank" class="archive-link" style="font-size:11px">📖 Read free →</a>` : ''}
+          <div class="book-note" style="font-size:10px;opacity:0.6;margin-top:2px">${b.source||''}</div>
+        </div>
+      </div>`).join('');
+    fillSlot('g-books','📚','Reading List',html,'Open Library · Google Books');
+  }
+
+  // 13. Guardian (cached)
+  if (g.guardian?.length) {
+    const html = g.guardian.map(r=>`
+      <div class="newspaper-item">
+        ${r.thumbnail?`<img src="${toHttps(r.thumbnail)}" class="newspaper-thumb" style="height:70px;object-fit:cover;margin-bottom:6px" loading="lazy" onerror="this.style.display='none'"/>` : ''}
+        <div class="newspaper-title"><a href="${r.url}" target="_blank">${r.headline||''}</a></div>
+        <div class="newspaper-meta">${r.date||''} · The Guardian</div>
+        ${r.trail?`<div class="newspaper-snippet">${r.trail.substring(0,120)}…</div>`:''}
+      </div>`).join('');
+    fillSlot('g-guardian','📰','The Guardian',html,'The Guardian Open Platform');
+  }
+
+  // 14. Inflation (client-side FRED — fast cached CPI data)
+  if (currencyMention) renderTasks.push(loadInflation(grid, currencyMention, year));
+
+  // 15. Map (client-side Leaflet — no API quota)
+  if (coords) renderTasks.push(loadMap(grid, coords, keyword, year, ev.infoboxMapUrl));
+
+  // 16. NASA (client-side — keyless, no quota concern)
+  if (isSpace) renderTasks.push(loadNASA(grid, keyword, year));
+
+  await Promise.allSettled(renderTasks);
 
   if (!grid.children.length) {
     grid.innerHTML = `<div class="empty-state" style="padding:20px 24px">No additional resources found. Try the Wikipedia article linked above.</div>`;
