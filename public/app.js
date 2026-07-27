@@ -304,8 +304,6 @@ async function loadAllGoodies(ev) {
   const entities  = ev.entities || { people: [] };
 
   const keyword     = pageTitle || title.split(' ').slice(0,5).join(' ');
-  // Use server-side query expansion if available — much richer than single keyword
-  const queryExpansion = ev.queryExpansion || [keyword, ...curatedPeopleNames].filter(Boolean);
   const isSpace     = /nasa|apollo|space|astronaut|rocket|moon|mars|orbit|satellite|shuttle|gemini|iss|hubble/i.test(title+fullText);
   // OCRE only covers Roman Imperial coins 27BCE–476CE — restrict strictly to ancient era
   const isRoman     = year < 500 && year > -100 &&
@@ -316,18 +314,21 @@ async function loadAllGoodies(ev) {
   const currencyMention = extractCurrencyMention(fullText);
   const archaicTerms    = extractArchaicTerms(title+' '+fullText);
 
-  // Curated resources — handcrafted for specific events
+  // Curated resources — must come before queryExpansion which references curatedPeopleNames
   const curated = ev.curated || { videos: [], books: [], coins: [], context: null };
+  const curatedPeopleNames = curated.people?.map(p => p.name) || [];
 
   // Key figure names — use enriched peopleSummaries first, fall back to entity extraction
-  // peopleSummaries are Wikipedia-verified; entities.people is raw text extraction
   const titlePeople = people.length
     ? people.map(p => p.name).slice(0,3)
     : entities.people?.slice(0,3) || [];
-  // Build fallback YouTube queries — use curated people names when available
-  const curatedPeopleNames = curated.people?.map(p => p.name) || [];
+
+  // Build fallback YouTube queries
   const fallbackQuery1 = curatedPeopleNames[0] || titlePeople[0] || keyword.split(' ').slice(0,3).join(' ');
   const fallbackQuery2 = curatedPeopleNames[1] || `${eraLabel(year)} history ${keyword.split(' ').slice(0,2).join(' ')}`;
+
+  // Query expansion — now safe to reference curatedPeopleNames
+  const queryExpansion = ev.queryExpansion || [keyword, ...curatedPeopleNames].filter(Boolean);
 
   // Pre-create ordered slots — goodies fill their slot when ready
   // This guarantees consistent order regardless of API response timing
