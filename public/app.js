@@ -347,15 +347,6 @@ async function loadAllGoodies(ev) {
     </div>
   `;
 
-  // Helper: fill a specific slot
-  function fillSlot(slotId, icon, title, bodyHTML, sourceNote='') {
-    const slot = document.getElementById(slotId);
-    if (!slot) return;
-    slot.innerHTML = '';
-    const card = goodieCard(icon, title, bodyHTML, sourceNote);
-    slot.appendChild(card);
-  }
-
   const grid = document.getElementById('goodies-grid');
 
   // Merge curated people names into query list — these are the most precise
@@ -449,6 +440,15 @@ function goodieCard(icon, title, bodyHTML, sourceNote='') {
 }
 function appendGoodie(grid, icon, title, html, source='') {
   grid.appendChild(goodieCard(icon, title, html, source));
+}
+
+// fillSlot — fills a named ordered slot (global scope so all goodie functions can use it)
+function fillSlot(slotId, icon, title, bodyHTML, sourceNote='') {
+  const slot = document.getElementById(slotId);
+  if (!slot) return;
+  slot.innerHTML = '';
+  const card = goodieCard(icon, title, bodyHTML, sourceNote);
+  slot.appendChild(card);
 }
 function extractCurrencyMention(text) {
   const pats = [/\$[\d,]+(?:\.\d+)?(?:\s?(?:million|billion|trillion))?/i,
