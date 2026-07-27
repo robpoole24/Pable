@@ -699,9 +699,15 @@ app.get('/api/events/today', async (req, res) => {
       const cached = await redis.get(cacheKey);
       if (cached) return res.json(JSON.parse(cached));
     }
-    // Cache miss — should not happen in normal operation
-    // ensureDailyCache() at startup guarantees cache is ready before first request
-    res.status(503).json({ error: 'Cache not ready yet — server is still building. Try again in a minute.' });
+    // Cache miss (e.g. after manual flush) — trigger a full rebuild
+    console.log('Cache miss on /api/events/today — triggering rebuild');
+    await ensureDailyCache();
+    // Try again after rebuild
+    if (redis) {
+      const cached = await redis.get(cacheKey);
+      if (cached) return res.json(JSON.parse(cached));
+    }
+    res.status(503).json({ error: 'Cache build failed — check server logs' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

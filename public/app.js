@@ -144,11 +144,23 @@ function renderApp() {
 async function loadTodayEvents() {
   try {
     const res = await fetch('/api/events/today');
-    const events = await res.json();
+    const data = await res.json();
+    // Guard against error responses
+    if (!Array.isArray(data)) {
+      console.error('Events API returned non-array:', data);
+      document.getElementById('main-content').innerHTML =
+        '<div style="padding:40px;text-align:center;color:var(--brown)">Loading history… please refresh in a moment.</div>';
+      // Retry after 5 seconds
+      setTimeout(loadTodayEvents, 5000);
+      return;
+    }
     // Sort oldest to newest
-    todayEvents = events.sort((a,b) => (parseInt(a.year)||0) - (parseInt(b.year)||0));
+    todayEvents = data.sort((a,b) => (parseInt(a.year)||0) - (parseInt(b.year)||0));
     if (document.getElementById('main-content')) renderEventList();
-  } catch (e) { console.error('Events load failed:', e); }
+  } catch (e) {
+    console.error('Events load failed:', e);
+    setTimeout(loadTodayEvents, 5000); // retry on network error
+  }
 }
 
 // ─── EVENT LIST ───────────────────────────────────────────────────────
