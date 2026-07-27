@@ -476,8 +476,10 @@ async function fetchGoodiesForEvent(ev) {
     } catch {}
   }
 
-  goodies._ready = true; // signals frontend that goodies are fully built
+  goodies._ready = true;
   goodies._builtAt = new Date().toISOString();
+  const sections = Object.keys(goodies).filter(k => !k.startsWith('_') && goodies[k]);
+  console.log(`    → Built: ${sections.join(', ') || 'nothing'}`);
   return goodies;
 }
 
@@ -622,18 +624,31 @@ async function ensureDailyCache() {
     const eventKey   = `pable:events:${CACHE_VERSION}:${today}`;
     const goodie0Key = `pable:goodies:${CACHE_VERSION}:${today}:0`;
 
-    // Check if everything is already fully built
-    const [evCached, g0Cached] = await Promise.all([
-      redis.get(eventKey).catch(()=>null),
-      redis.get(goodie0Key).catch(()=>null)
-    ]);
-
-    if (evCached && g0Cached) {
-      const g0 = JSON.parse(g0Cached);
-      if (g0._ready) {
-        console.log('Full cache hit for', today, '— events + goodies ready');
+    // Check if everything is fully built — verify ALL slots have real content
+    const evCached = await redis.get(eventKey).catch(()=>null);
+    if (evCached) {
+      const events = JSON.parse(evCached);
+      const goodieChecks = await Promise.all(
+        events.map((_, i) =>
+          redis.get(`pable:goodies:${CACHE_VERSION}:${today}:${i}`).catch(()=>null)
+        )
+      );
+      const allBuilt = goodieChecks.every(g => {
+        if (!g) return false;
+        const parsed = JSON.parse(g);
+        // Must be marked ready AND have at least some real content
+        return parsed._ready === true && (
+          parsed.images?.length > 0 ||
+          parsed.youtubeVideos?.length > 0 ||
+          parsed.books?.length > 0 ||
+          parsed.music != null
+        );
+      });
+      if (allBuilt) {
+        console.log(`Full cache hit for ${today} — all ${events.length} events + goodies verified ready`);
         return;
       }
+      console.log(`Cache incomplete — ${goodieChecks.filter(Boolean).length}/${events.length} goodies found, rebuilding…`);
     }
 
     // Build events if needed
@@ -774,6 +789,23 @@ app.post('/api/cache/clear', async (req, res) => {
     res.json({ ok:true, built:events.length, ttl, ready:true,
       message:`All ${events.length} events and goodies fully cached.` });
   } catch (e) { res.status(500).json({ error:e.message }); }
+});
+
+// Nuclear option — flush ALL today's cache keys and rebuild from scratch
+app.post('/api/cache/flush', async (req, res) => {
+  if (!redis) return res.status(503).json({ error: 'Redis not connected' });
+  const today = getTodayPacific();
+  let deleted = 0;
+  for (const v of [CACHE_VERSION,'v11','v10','v9','v8','v7','v6','v5','v4','v3']) {
+    const d1 = await redis.del(`pable:events:${v}:${today}`).catch(()=>0);
+    deleted += d1;
+    for (let i = 0; i < 25; i++) {
+      const d2 = await redis.del(`pable:goodies:${v}:${today}:${i}`).catch(()=>0);
+      deleted += d2;
+    }
+  }
+  console.log(`Flushed ${deleted} Redis keys for ${today}`);
+  res.json({ flushed: deleted, today, message: 'Cache cleared. Now POST /api/cache/clear to rebuild.' });
 });
 
 // YouTube test
