@@ -144,7 +144,9 @@ function renderApp() {
 async function loadTodayEvents() {
   try {
     const res = await fetch('/api/events/today');
-    todayEvents = await res.json();
+    const events = await res.json();
+    // Sort oldest to newest
+    todayEvents = events.sort((a,b) => (parseInt(a.year)||0) - (parseInt(b.year)||0));
     if (document.getElementById('main-content')) renderEventList();
   } catch (e) { console.error('Events load failed:', e); }
 }
@@ -172,7 +174,8 @@ function renderEventList() {
     </div>
   `;
   document.querySelectorAll('.event-card').forEach((card, i) => {
-    card.addEventListener('click', () => openEvent(todayEvents[i], true));
+    const evWithIdx = { ...todayEvents[i], _cacheIndex: i };
+    card.addEventListener('click', () => openEvent(evWithIdx, true));
   });
 }
 
@@ -200,7 +203,7 @@ function eventCardHTML(ev, i) {
       <div class="event-card-inner">
         <div class="event-card-era">${eraLabel(year)}</div>
         <div class="event-card-year">${year}</div>
-        <div class="event-card-title">${title.substring(0,120)}</div>
+        <div class="event-card-title">${title}</div>
         <div class="event-card-teaser">${extract.substring(0,200)}${extract.length>200?'…':''}</div>
         <div class="event-card-open-hint">Explore this event ↓</div>
       </div>
@@ -292,8 +295,7 @@ function breakSeal() {
   }, 3000); // exactly matches GIF duration
 }
 
-// ─── LOAD ALL GOODIES — uses server-side pre-cached data ─────────────
-// All API calls happened at midnight server-side. We just render what's cached.
+// ─── LOAD ALL GOODIES — fetches pre-cached server-side data ──────────
 async function loadAllGoodies(ev) {
   try {
   const container = document.getElementById('goodies-container');
@@ -304,6 +306,18 @@ async function loadAllGoodies(ev) {
   const coords    = ev.coordinates || ev.pages?.[0]?.coordinates;
   const people    = ev.peopleSummaries || [];
   const entities  = ev.entities || { people: [] };
+
+  // Fetch pre-cached goodies from server (built at midnight, not on demand)
+  const cacheIdx = ev._cacheIndex ?? null;
+  let cachedGoodies = ev.goodies || {};
+  if (cacheIdx !== null && !Object.keys(cachedGoodies).length) {
+    try {
+      const gr = await fetch(`/api/goodies/${cacheIdx}`);
+      if (gr.ok) cachedGoodies = await gr.json();
+    } catch {}
+  }
+  // Override ev.goodies with freshly fetched data
+  ev = { ...ev, goodies: cachedGoodies };
 
   const keyword     = pageTitle || title.split(' ').slice(0,5).join(' ');
   const isSpace     = /nasa|apollo|space|astronaut|rocket|moon|mars|orbit|satellite|shuttle|gemini|iss|hubble/i.test(title+fullText);
