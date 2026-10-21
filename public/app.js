@@ -186,7 +186,8 @@ function renderEventList() {
     </div>
   `;
   document.querySelectorAll('.event-card').forEach((card, i) => {
-    const evWithIdx = { ...todayEvents[i], _cacheIndex: i };
+    // The list is shown oldest-first, but goodies are stored in the server's own order
+    const evWithIdx = { ...todayEvents[i], _cacheIndex: todayEvents[i]._goodieIndex ?? i };
     card.addEventListener('click', () => openEvent(evWithIdx, true));
   });
 }
@@ -404,30 +405,26 @@ async function loadAllGoodies(ev) {
     fillSlot('g-images','🖼','Images & Artwork',html,'Wikimedia Commons · DPLA · Smithsonian');
   }
 
-  // 3. Coins (cached)
-  if (g.coins?.length) {
-    const html = `<p class="goodie-context">Coinage from the rulers and regions involved in this event.</p>
-      <div class="images-grid">${g.coins.map(c=>`
-        <div class="image-item">
-          <img src="${toHttps(c.url)}" alt="${c.caption||''}" loading="lazy"
-            onerror="this.closest('.image-item').style.display='none'"/>
-          <div class="image-caption">${c.caption||''}<span class="img-source">${c.source||''}</span></div>
-        </div>`).join('')}</div>`;
-    fillSlot('g-coins','🪙','Coins of the Era',html,'Numista · Wikimedia · OCRE');
+  // 2b. Art & artifacts of the period (cached)
+  if (g.art?.length) {
+    fillSlot('g-met','🏛️','Art & Artifacts of the Era', pictureGrid(g.art),
+      sourceList(g.art) + ' · public domain & open collections');
   }
 
-  // 4. YouTube videos (cached)
-  if (g.youtubeVideos?.length) {
-    const html = g.youtubeVideos.map(v=>`
-      <a href="https://youtube.com/watch?v=${v.id}" target="_blank" class="video-item">
-        <img class="video-thumb-img" src="${toHttps(v.thumb)}" alt="" onerror="this.style.display='none'"/>
-        <div>
-          <div class="video-title">${(v.title||'').substring(0,90)}</div>
-          <div class="video-channel">${v.channel||''}</div>
-          <div class="video-source">YouTube</div>
-        </div>
-      </a>`).join('');
-    fillSlot('g-yt-docs','🎬','Documentaries & Video',html,'YouTube Data API v3');
+  // 3. Coins (cached)
+  if (g.coins?.length) {
+    const html = `<p class="goodie-context">Coins made around the time and place of this event.</p>${pictureGrid(g.coins)}`;
+    fillSlot('g-coins','🪙','Coins of the Era',html, sourceList(g.coins));
+  }
+
+  // 4. YouTube videos (cached) — swipeable carousels
+  const ytList = (g.youtubeVideos||[]).filter(v => v.why !== 'curated' || !curated.videos?.length);
+  if (ytList.length) {
+    fillSlot('g-yt-docs','🎬','Documentaries & Video', videoCarousel(ytList),'YouTube');
+  }
+  if (g.periodVideos?.length) {
+    fillSlot('g-yt-news','🍲','Life & Food of the Era',
+      `<p class="goodie-context">How people lived, cooked and ate around this time.</p>${videoCarousel(g.periodVideos)}`,'YouTube');
   }
 
   // 5. Archive video (cached)
@@ -491,25 +488,40 @@ async function loadAllGoodies(ev) {
   // 10. Life & Society (client-side Wikipedia — fast, no quota)
   renderTasks.push(loadLifeAndSociety(grid, keyword, year, fullText, curatedPeopleNames));
 
-  // 11. Music (cached)
-  if (g.music?.composers?.length) {
-    const { epoch, composers } = g.music;
-    const html = composers.map(c=>`
-      <div class="music-item">
-        ${c.portrait?`<img src="${toHttps(c.portrait)}" class="composer-portrait" onerror="this.style.display='none'"/>`:'<div class="music-icon">♪</div>'}
-        <div style="flex:1">
-          <div class="music-title">${c.name}</div>
-          <div class="music-composer">${epoch} · ${(c.birth||'?').substring(0,4)}–${(c.death||'present').substring(0,4)}</div>
-          ${c.audioUrl
-            ? `<audio controls preload="metadata" style="width:100%;margin-top:4px">
-                <source src="/api/audio/proxy?url=${encodeURIComponent(c.audioUrl)}" type="audio/mpeg">
-               </audio>`
-            : c.archiveId
-              ? `<a href="https://archive.org/details/${c.archiveId}" target="_blank" class="archive-link">Listen on archive.org →</a>`
-              : ''}
-        </div>
-      </div>`).join('');
-    fillSlot('g-music','🎵',`Music of the ${epoch}`,html,'Open Opus · Internet Archive');
+  // 11. Music of the time and place (cached)
+  const mu = g.music;
+  if (mu && (mu.recordings?.length || mu.composers?.length || mu.videos?.length)) {
+    const player = (r) => {
+      const src = r.proxy ? `/api/audio/proxy?url=${encodeURIComponent(r.url)}` : toHttps(r.url);
+      return `<audio controls preload="none" style="width:100%;margin-top:4px"><source src="${escH(src)}"></audio>`;
+    };
+    const credit = (r) => [r.performer, r.license].filter(Boolean).map(escH).join(' · ')
+      + (r.link ? ` · <a href="${escH(r.link)}" target="_blank" rel="noopener">${escH(r.source||'source')}</a>` : '');
+    let html = mu.styles?.length ? `<p class="goodie-context">${mu.styles.map(escH).join(' · ')}</p>` : '';
+    if (mu.recordings?.length) {
+      html += `<div class="music-subhead">Listen</div>` + mu.recordings.map(r => `
+        <div class="music-item"><div class="music-icon">♪</div>
+          <div style="flex:1">
+            <div class="music-title">${escH(r.title)}</div>
+            <div class="music-composer">${credit(r)}</div>
+            ${player(r)}
+          </div></div>`).join('');
+    }
+    if (mu.composers?.length) {
+      html += `<div class="music-subhead">Composers of the day</div>` + mu.composers.map(c => `
+        <div class="music-item">
+          ${c.portrait ? `<img src="${escH(toHttps(c.portrait))}" class="composer-portrait" onerror="this.style.display='none'"/>` : '<div class="music-icon">♪</div>'}
+          <div style="flex:1">
+            <div class="music-title">${c.url ? `<a href="${escH(c.url)}" target="_blank" rel="noopener">${escH(c.name)}</a>` : escH(c.name)}</div>
+            <div class="music-composer">${c.born ?? '?'}–${c.died ?? ''}${c.countries?.length ? ' · ' + escH(c.countries[0]) : ''}</div>
+            ${c.recording ? `<div class="music-composer" style="margin-top:4px">♪ ${escH(c.recording.title)}</div>${player(c.recording)}
+              <div class="music-composer" style="font-size:10px">${credit(c.recording)}</div>` : ''}
+          </div></div>`).join('');
+    }
+    if (mu.videos?.length) {
+      html += `<div class="music-subhead">Hear it performed</div>` + videoCarousel(mu.videos);
+    }
+    fillSlot('g-music','🎵','Music of the Era', html, 'Wikimedia Commons · Internet Archive · Wikidata · YouTube');
   }
 
   // 12. Books (cached)
@@ -569,6 +581,42 @@ async function loadAllGoodies(ev) {
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────
+function escH(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function sourceList(items) {
+  return [...new Set(items.map(i => i.source).filter(Boolean))].join(' · ');
+}
+// Picture grid for coins / art — each picture links to the museum's own page
+function pictureGrid(items) {
+  return `<div class="images-grid">${items.map(c => {
+    const img = `<img src="${escH(toHttps(c.url))}" alt="${escH(c.caption)}" loading="lazy"
+        onerror="this.closest('.image-item').style.display='none'"/>`;
+    return `<div class="image-item">
+        ${c.link ? `<a href="${escH(c.link)}" target="_blank" rel="noopener">${img}</a>` : img}
+        <div class="image-caption">${escH(c.caption)}<span class="img-source">${escH(c.source)}</span></div>
+      </div>`;
+  }).join('')}</div>`;
+}
+// Swipeable row of videos; tapping one plays it right in the card
+function videoCarousel(videos) {
+  return `<div class="yt-carousel">${videos.map(v => `
+    <div class="yt-card" data-id="${escH(v.id)}">
+      <button class="yt-thumb" onclick="playYouTube(this)" aria-label="Play ${escH(v.title)}">
+        <img src="${escH(toHttps(v.thumb || `https://img.youtube.com/vi/${v.id}/mqdefault.jpg`))}" alt="" loading="lazy"/>
+        <span class="yt-play">▶</span>
+      </button>
+      <div class="yt-title">${escH((v.title||'').substring(0,90))}</div>
+      <div class="yt-channel">${escH(v.channel||'')}</div>
+    </div>`).join('')}</div>`;
+}
+function playYouTube(btn) {
+  const card = btn.closest('.yt-card');
+  const id = card?.dataset.id;
+  if (!id) return;
+  btn.outerHTML = `<div class="yt-frame"><iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?autoplay=1&rel=0"
+    title="YouTube video" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></div>`;
+}
 function goodieCard(icon, title, bodyHTML, sourceNote='') {
   const div = document.createElement('div');
   div.className = 'goodie-section';
@@ -679,9 +727,9 @@ async function loadPeopleDossiers(grid, people, year, curatedPeople=[]) {
   if (!people.length) return;
   const PLACE_WORDS = /comune|municipality|city|town|village|country|region|district|province|county|kingdom|empire|battle|island|mountain|river|sea|ocean|war|island/i;
   const PERSON_WORDS = /king|queen|count|duke|prince|emperor|general|sultan|pope|ruler|president|founder|commander|lord|baron|leader|minister|bishop|archbishop|tsar|pharaoh|caliph|senator|consul|knight/i;
-  const humanPeople = people.filter(p =>
-    PERSON_WORDS.test(p.extract || '') && !PLACE_WORDS.test(p.extract?.split('.')[0] || '')
-  ).slice(0, 3);
+  const humanPeople = people.filter(p => p.confirmed ||
+    (PERSON_WORDS.test(p.extract || '') && !PLACE_WORDS.test(p.extract?.split('.')[0] || ''))
+  ).slice(0, 5);
   if (!humanPeople.length) return;
 
   const html = humanPeople.map(p => `
@@ -691,6 +739,7 @@ async function loadPeopleDossiers(grid, people, year, curatedPeople=[]) {
         : '<div class="person-portrait-placeholder">👤</div>'}
       <div class="person-info">
         <div class="person-name">${p.name}</div>
+        ${p.role || p.born != null ? `<div class="person-role">${escH(p.role||'')}${p.born != null ? ` · ${p.born < 0 ? -p.born+' BC' : p.born}–${p.died == null ? '' : p.died < 0 ? -p.died+' BC' : p.died}` : ''}</div>` : ''}
         <div class="person-extract">${p.extract || ''}</div>
         ${p.url ? `<a href="${p.url}" target="_blank" class="archive-link">Wikipedia →</a>` : ''}
       </div>

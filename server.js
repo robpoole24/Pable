@@ -7,6 +7,8 @@
    ═══════════════════════════════════════════════════════════════════════ */
 require('dotenv').config();
 const { getCurated } = require('./curation');
+const sources = require('./sources');
+const music   = require('./music');
 const express = require('express');
 const fetch   = require('node-fetch');
 const https   = require('https');
@@ -37,6 +39,7 @@ let buildInProgress = false; // mutex — only one build at a time
     redis.on('error', e => console.error('Redis:', e));
     await redis.connect();
     console.log('Redis connected');
+    sources.init(redis);
     await ensureDailyCache();
   } catch (e) {
     console.error('Redis failed:', e.message);
@@ -93,7 +96,7 @@ function getPacificMidnight() {
   return new Date(now.getTime() + msUntilMidnight);
 }
 
-const CACHE_VERSION = 'v11';
+const CACHE_VERSION = 'v12';
 
 // ─── Entity extraction ─────────────────────────────────────────────────
 function extractEntities(article) {
@@ -195,7 +198,7 @@ async function fetchGoodiesForEvent(ev) {
   const year      = parseInt(ev.year) || 0;
   const title     = (ev.text||'').replace(/\[\[.*?\]\]/g,'');
   const fullText  = ev.fullText || '';
-  const pageTitle = ev.pages?.[0]?.title || '';
+  const pageTitle = String(ev.pages?.[0]?.title || '').replace(/_/g, ' ');
   const curated   = ev.curated || {};
   const people    = ev.peopleSummaries || [];
   const qe        = ev.queryExpansion || [pageTitle];
@@ -214,32 +217,19 @@ async function fetchGoodiesForEvent(ev) {
 
   const goodies = {};
 
-  // ── YouTube videos ────────────────────────────────────────────────
+  // ── YouTube (trusted channels + at most two searches; quota-aware) ──
+  const ctx = sources.contextFor(ev);
   try {
-    const ytKey = process.env.YOUTUBE_API_KEY;
-    if (ytKey) {
-      const queries = [...new Set([...qe.slice(0,3), ...allPeople.slice(0,2)])].filter(Boolean);
-      let ytItems = [];
-      for (const q of queries) {
-        if (ytItems.length >= 8) break;
-        try {
-          // Search bare first (no "documentary history" appended — reduces results)
-          const data = await apiFetch(
-            `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(q)}&type=video&videoEmbeddable=true&maxResults=6&relevanceLanguage=en&key=${ytKey}`
-          );
-          for (const item of (data.items||[])) {
-            if (!ytItems.find(x => x.id?.videoId === item.id?.videoId)) ytItems.push(item);
-          }
-        } catch {}
-      }
-      goodies.youtubeVideos = ytItems.slice(0,8).map(v => ({
-        id:      v.id?.videoId,
-        title:   v.snippet?.title,
-        channel: v.snippet?.channelTitle,
-        thumb:   v.snippet?.thumbnails?.medium?.url || ''
-      }));
-    }
-  } catch {}
+    const yt = await sources.youtubeFor(ctx);
+    const curatedVids = (curated.videos||[]).map(v => ({ id:v.id, title:v.title, channel:v.channel,
+      thumb:`https://img.youtube.com/vi/${v.id}/mqdefault.jpg`, why:'curated' }));
+    goodies.youtubeVideos = [...curatedVids, ...yt.videos.filter(v => !curatedVids.some(c => c.id === v.id))].slice(0,12);
+    goodies.periodVideos  = yt.periodVideos;
+    if (yt.pending) goodies._pending = { ...(goodies._pending||{}), youtube: true };
+  } catch (e) { sources.note('youtube', e.message); }
+
+  // ── Art & artifacts of the period (The Met · Europeana · Smithsonian) ──
+  try { goodies.art = await sources.artFor(ctx); } catch (e) { sources.note('art', e.message); }
 
   // ── Internet Archive video ─────────────────────────────────────────
   try {
@@ -310,44 +300,11 @@ async function fetchGoodiesForEvent(ev) {
     goodies.images = images.slice(0,10);
   } catch {}
 
-  // ── Music (Open Opus) ──────────────────────────────────────────────
+  // ── Music of the time and place (styles · composers · playable recordings · performances) ──
   try {
-    const musicEpoch = year < 1400 ? 'Medieval' : year < 1600 ? 'Renaissance' :
-      year < 1750 ? 'Baroque' : year < 1820 ? 'Classical' : year < 1910 ? 'Romantic' : null;
-    if (musicEpoch) {
-      const data = await apiFetch(`https://api.openopus.org/composer/list/epoch/${musicEpoch}.json`).catch(()=>({composers:[]}));
-      // Tighten range — only composers who lived within 80 years of the event
-      // Prevents 1500s events getting 1700s Classical composers
-      const pool = (data.composers||[]).filter(c => {
-        const born=parseInt(c.birth)||0, died=parseInt(c.death)||9999;
-        return born <= year + 80 && died >= year - 30;
-      }).sort(()=>Math.random()-0.5).slice(0,8);
-
-      const withAudio = [];
-      for (const c of pool) {
-        if (withAudio.length >= 4) break;
-        try {
-          const q  = encodeURIComponent(c.complete_name);
-          const ar = await apiFetch(`https://archive.org/advancedsearch.php?q=${q}+mediatype:audio&fl[]=identifier,title&sort[]=downloads+desc&rows=3&output=json`).catch(()=>({response:{docs:[]}}));
-          for (const item of (ar.response?.docs||[])) {
-            const meta = await apiFetch(`https://archive.org/metadata/${item.identifier}`).catch(()=>({files:[]}));
-            const file = (meta.files||[]).find(f=>/\.mp3$/i.test(f.name));
-            if (file) {
-              withAudio.push({ name:c.complete_name, epoch:musicEpoch, birth:c.birth, death:c.death,
-                portrait:c.portrait,
-                audioUrl:`https://archive.org/download/${item.identifier}/${encodeURIComponent(file.name)}`,
-                audioTitle:item.title, archiveId:item.identifier });
-              break;
-            }
-          }
-          if (!withAudio.find(x=>x.name===c.complete_name)) {
-            withAudio.push({ name:c.complete_name, epoch:musicEpoch, birth:c.birth, death:c.death, portrait:c.portrait, audioUrl:null });
-          }
-        } catch {}
-      }
-      goodies.music = { epoch: musicEpoch, composers: withAudio.slice(0,4) };
-    }
-  } catch {}
+    goodies.music = await music.musicFor(ev, ctx);
+    if (goodies.music.pending) goodies._pending = { ...(goodies._pending||{}), music: true };
+  } catch (e) { sources.note('music', e.message); }
 
   // ── Books ──────────────────────────────────────────────────────────
   try {
@@ -419,36 +376,12 @@ async function fetchGoodiesForEvent(ev) {
     } catch {}
   }
 
-  // ── Coins ──────────────────────────────────────────────────────────
+  // ── Coins of the period (curated → Smithsonian NNC → The Met → Numista for rulers) ──
   try {
-    // Use curated coins first
-    let coins = [...(curated.coins||[])];
-    if (coins.length < 4) {
-      const numistaKey = process.env.NUMISTA_API_KEY;
-      const queries = allPeople.length ? allPeople.slice(0,2) : [pageTitle.split(' ').slice(0,2).join(' ')];
-      for (const q of queries) {
-        if (coins.length >= 6) break;
-        // Wikimedia numismatic search
-        const data = await apiFetch(`https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(q+' coin numismatic')}&gsrnamespace=6&prop=imageinfo&iiprop=url|extmetadata&iiurlwidth=400&format=json&origin=*&gsrlimit=6`).catch(()=>({}));
-        for (const p of Object.values(data.query?.pages||{})) {
-          const url = p.imageinfo?.[0]?.url;
-          if (!url || /\.(svg|gif)$/i.test(url)) continue;
-          if (coins.find(x=>x.url===url)) continue;
-          coins.push({ url, caption:(p.title||'').replace('File:','').replace(/\.[^.]+$/,''), source:'Wikimedia' });
-        }
-        // Numista
-        if (numistaKey && coins.length < 4) {
-          const nm = await apiFetch(`https://api.numista.com/v3/types?q=${encodeURIComponent(q)}&lang=en&count=4&category=coin`,
-            { headers:{ 'Numista-API-Key':numistaKey } }).catch(()=>({types:[]}));
-          for (const t of (nm.types||[])) {
-            if (t.obverse_thumbnail) coins.push({ url:t.obverse_thumbnail,
-              caption:[t.title, t.issuer?.name, t.min_year].filter(Boolean).join(' · '), source:'Numista' });
-          }
-        }
-      }
-    }
-    goodies.coins = coins.slice(0,8);
-  } catch {}
+    const curatedCoins = (curated.coins||[]).map(c => ({ ...c, source: c.source || 'Curated' }));
+    const found = curatedCoins.length >= 4 ? [] : await sources.coinsFor(ctx);
+    goodies.coins = [...curatedCoins, ...found.filter(c => !curatedCoins.some(x => x.url === c.url))].slice(0,10);
+  } catch (e) { sources.note('coins', e.message); }
 
   // ── Primary sources (Gutenberg) ────────────────────────────────────
   if (year < 1600) {
@@ -513,7 +446,10 @@ async function enrichEvents(events) {
       const fullText = article?.fullText || ev.pages?.[0]?.extract || '';
       const entities = extractEntities(fullText);
 
-      const peopleSummaries = await Promise.all(
+      // People, other names, places and period words (Wikidata + Wikipedia)
+      const extra = await sources.enrich(ev, fullText).catch(e => { sources.note('enrich', e.message); return {}; });
+
+      const peopleSummaries = extra.people?.length ? extra.people : await Promise.all(
         entities.people.slice(0, 3).map(async name => {
           try {
             const encoded = encodeURIComponent(name.replace(/ /g,'_'));
@@ -552,6 +488,7 @@ async function enrichEvents(events) {
 
       const enriched = { ...ev, fullText, fullSummary:article?.extract||ev.pages?.[0]?.extract||'',
         entities, peopleSummaries:peopleSummaries.filter(Boolean),
+        keyPeople:peopleSummaries.filter(Boolean), altNames:extra.altNames||[], places:extra.places||[], period:extra.period||null,
         coordinates:article?.coordinates||ev.pages?.[0]?.coordinates||null,
         infoboxMapUrl:article?.infoboxMapUrl||null, queryExpansion, curated };
 
@@ -693,6 +630,7 @@ async function ensureDailyCache() {
 
     // Build ALL goodies completely before serving users
     console.log('Building goodies for all events…');
+    await sources.refreshCatalogs().catch(e => sources.note('catalogues', e.message));
     await buildAndCacheAllGoodies(events, today);
     console.log('✓ Daily cache complete — ready to serve');
 
@@ -715,6 +653,52 @@ function schedulePacificMidnight() {
 }
 // Delay scheduler start by 10s to avoid racing with startup build
 setTimeout(schedulePacificMidnight, 10000);
+
+// ─── Fill in YouTube for events whose build ran out of quota ──────────
+// Runs every hour; does nothing unless some of today's events are waiting.
+async function retryPendingYouTube() {
+  if (!redis || buildInProgress) return;
+  const today = getTodayPacific();
+  const raw = await redis.get(`pable:events:${CACHE_VERSION}:${today}`).catch(()=>null);
+  if (!raw) return;
+  const events = JSON.parse(raw);
+  let filled = 0;
+  for (let i = 0; i < events.length; i++) {
+    const key = `pable:goodies:${CACHE_VERSION}:${today}:${i}`;
+    const g = JSON.parse(await redis.get(key).catch(()=>null) || 'null');
+    if (!g?._pending?.youtube && !g?._pending?.music) continue;
+    const ctx = sources.contextFor(events[i]);
+    if (g._pending.youtube) {
+      const yt = await sources.youtubeFor(ctx).catch(()=>null);
+      if (!yt || yt.pending) break;                     // still out of quota — try next hour
+      const curatedVids = (g.youtubeVideos||[]).filter(v => v.why === 'curated');
+      g.youtubeVideos = [...curatedVids, ...yt.videos.filter(v => !curatedVids.some(c => c.id === v.id))].slice(0,12);
+      g.periodVideos  = yt.periodVideos;
+      delete g._pending.youtube;
+    }
+    if (g._pending.music) {
+      const m = await music.musicFor(events[i], ctx, { videosOnly: true }).catch(()=>null);
+      if (!m || m.pending) break;
+      g.music = { ...(g.music||{}), videos: m.videos, pending: false };
+      delete g._pending.music;
+    }
+    const ttl = await redis.ttl(key).catch(()=>3600);
+    await redis.setEx(key, Math.max(ttl, 60), JSON.stringify(g));
+    filled++;
+  }
+  if (filled) console.log(`YouTube filled in for ${filled} event(s) that were waiting on quota`);
+}
+setInterval(() => retryPendingYouTube().catch(e => sources.note('youtube retry', e.message)), 60 * 60 * 1000);
+
+// Endpoints that spend API quota or rebuild the cache need the admin key
+// (Railway variable PABLE_ADMIN_KEY; send it as ?key=… or an x-admin-key header)
+function requireAdmin(req, res, next) {
+  const want = (process.env.PABLE_ADMIN_KEY || '').trim();
+  const got  = String(req.get('x-admin-key') || req.query.key || '').trim();
+  if (!want) return res.status(403).json({ error: 'Set PABLE_ADMIN_KEY in Railway to use this.' });
+  if (got !== want) return res.status(403).json({ error: 'Admin key required.' });
+  next();
+}
 
 // ─── Routes ───────────────────────────────────────────────────────────
 
@@ -803,11 +787,11 @@ app.get('/api/cache/status', async (req, res) => {
 
 // Cache clear + full rebuild — this request blocks until ALL goodies are built
 // Expect this to take 3-5 minutes. Use only when you need a manual refresh.
-app.post('/api/cache/clear', async (req, res) => {
+app.post('/api/cache/clear', requireAdmin, async (req, res) => {
   if (!redis) return res.status(503).json({ error:'Redis not connected' });
   const today = getTodayPacific();
   // Clear all cached data
-  for (const v of [CACHE_VERSION,'v11','v10','v9','v8','v7','v6','v5','v4','v3']) {
+  for (const v of [CACHE_VERSION,'v12','v11','v10','v9','v8','v7','v6','v5','v4','v3']) {
     await redis.del(`pable:events:${v}:${today}`).catch(()=>{});
     for (let i=0; i<25; i++) await redis.del(`pable:goodies:${v}:${today}:${i}`).catch(()=>{});
   }
@@ -818,6 +802,7 @@ app.post('/api/cache/clear', async (req, res) => {
     const ttl      = Math.max(Math.floor((midnight - new Date()) / 1000), 3600);
     await redis.setEx(`pable:events:${CACHE_VERSION}:${today}`, ttl, JSON.stringify(events));
     // Build ALL goodies synchronously — this request waits until complete
+    await sources.refreshCatalogs().catch(e => sources.note('catalogues', e.message));
     await buildAndCacheAllGoodies(events, today);
     res.json({ ok:true, built:events.length, ttl, ready:true,
       message:`All ${events.length} events and goodies fully cached.` });
@@ -825,11 +810,11 @@ app.post('/api/cache/clear', async (req, res) => {
 });
 
 // Nuclear option — flush ALL today's cache keys and rebuild from scratch
-app.post('/api/cache/flush', async (req, res) => {
+app.post('/api/cache/flush', requireAdmin, async (req, res) => {
   if (!redis) return res.status(503).json({ error: 'Redis not connected' });
   const today = getTodayPacific();
   let deleted = 0;
-  for (const v of [CACHE_VERSION,'v11','v10','v9','v8','v7','v6','v5','v4','v3']) {
+  for (const v of [CACHE_VERSION,'v12','v11','v10','v9','v8','v7','v6','v5','v4','v3']) {
     const d1 = await redis.del(`pable:events:${v}:${today}`).catch(()=>0);
     deleted += d1;
     for (let i = 0; i < 25; i++) {
@@ -842,7 +827,7 @@ app.post('/api/cache/flush', async (req, res) => {
 });
 
 // YouTube test
-app.get('/api/youtube/test', async (req, res) => {
+app.get('/api/youtube/test', requireAdmin, async (req, res) => {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key) return res.json({ error:'No YouTube key' });
   const q = req.query.q || 'Friedrich Barbarossa';
@@ -852,6 +837,79 @@ app.get('/api/youtube/test', async (req, res) => {
       items:(data.items||[]).map(i=>({ id:i.id?.videoId, title:i.snippet?.title, channel:i.snippet?.channelTitle })),
       error:data.error||null });
   } catch (e) { res.json({ error:e.message }); }
+});
+
+// ─── Sources: status & a live test for one article ────────────────────
+app.get('/api/sources/status', async (req, res) => {
+  try { res.json(await sources.status()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// /api/sources/test?title=Battle_of_Hastings&year=1066[&yt=1&key=ADMIN]
+app.get('/api/sources/test', requireAdmin, async (req, res) => {
+  const title = String(req.query.title || 'Battle of Hastings').replace(/_/g, ' ');
+  const year  = parseInt(req.query.year, 10) || 1066;
+  const out = { title, year };
+  try {
+    const sum = await apiFetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.replace(/ /g,'_'))}`,
+      { headers:{ 'User-Agent':'PableHistoryApp/5.0 (educational; robpoole24@gmail.com)' } }).catch(()=>null);
+    // Linked pages from the article's first links, like On This Day gives us
+    const links = await apiFetch(`https://en.wikipedia.org/w/api.php?action=query&format=json&formatversion=2&generator=links&titles=${encodeURIComponent(title)}&gplnamespace=0&gpllimit=40&prop=pageprops|description|pageimages&ppprop=wikibase_item&pithumbsize=200`).catch(()=>null);
+    const pages = [{ title, wikibase_item: sum?.wikibase_item, description: sum?.description }]
+      .concat((links?.query?.pages||[]).map(p => ({ title:p.title, normalizedtitle:p.title, wikibase_item:p.pageprops?.wikibase_item,
+        description:p.description, thumbnail: p.thumbnail ? { source:p.thumbnail.source } : undefined })));
+    const ev = { year, text: sum?.extract || title, pages };
+    const extra = await sources.enrich(ev, sum?.extract || '');
+    out.people = (extra.people||[]).map(p => `${p.name} (${p.born ?? '?'}–${p.died ?? '?'})${p.ruler?' ruler':''}`);
+    out.altNames = extra.altNames; out.places = extra.places; out.period = extra.period;
+    const ctx = sources.contextFor({ ...ev, keyPeople: extra.people, altNames: extra.altNames, places: extra.places, period: extra.period });
+    const coins = await sources.coinsFor(ctx);
+    out.coins = { count: coins.length, bySource: coins.reduce((a,c)=>(a[c.source]=(a[c.source]||0)+1,a),{}), sample: coins.slice(0,4).map(c=>c.caption) };
+    const mus = await music.musicFor(ev, ctx, { noVideos: req.query.yt !== '1' }).catch(e => ({ error: e.message }));
+    out.music = mus.error ? mus : { label: mus.label, region: mus.region,
+      composers: (mus.composers||[]).map(c => `${c.name} (${c.born}–${c.died ?? ''})${c.recording ? ' ♪ ' + c.recording.title : ''}`),
+      recordings: (mus.recordings||[]).map(r => `${r.title} — ${r.source}`), videos: (mus.videos||[]).map(v => `${v.title} — ${v.channel} [${v.style}]`) };
+    const art = await sources.artFor(ctx);
+    out.art = { count: art.length, bySource: art.reduce((a,c)=>(a[c.source]=(a[c.source]||0)+1,a),{}), sample: art.slice(0,4).map(c=>c.caption) };
+    if (req.query.yt === '1') {
+      const yt = await sources.youtubeFor(ctx, { fresh: true });
+      out.youtube = { videos: yt.videos.map(v => `${v.title} — ${v.channel} [${v.why}]`), period: yt.periodVideos.map(v => `${v.title} — ${v.channel}`), pending: yt.pending };
+    } else out.youtube = 'add &yt=1 to also test YouTube (uses up to 200 quota units)';
+    out.status = await sources.status();
+    res.json(out);
+  } catch (e) { out.error = e.message; res.status(500).json(out); }
+});
+app.post('/api/sources/refresh-channels', requireAdmin, async (req, res) => {
+  res.json({ report: await sources.refreshCatalogs(true) });
+});
+
+// ─── Merriam-Webster & FRED (the browser asks; keys stay on the server) ──
+async function cachedJSON(key, ttlSec, url) {
+  if (redis) { const hit = await redis.get(key).catch(()=>null); if (hit) return JSON.parse(hit); }
+  const data = await apiFetch(url);
+  if (redis) await redis.setEx(key, ttlSec, JSON.stringify(data)).catch(()=>{});
+  return data;
+}
+app.get('/api/dictionary/:word', async (req, res) => {
+  const w = String(req.params.word||'').toLowerCase();
+  const k = (process.env.MERRIAM_WEBSTER_DICTIONARY_API_KEY||'').trim();
+  if (!/^[a-z][a-z' -]{1,30}$/.test(w) || !k) return res.json([]);
+  try { res.json(await cachedJSON(`pable:mw:dict:${w}`, 180*86400, `https://www.dictionaryapi.com/api/v3/references/collegiate/json/${encodeURIComponent(w)}?key=${k}`)); }
+  catch (e) { sources.note('merriam-webster', e.message); res.json([]); }
+});
+app.get('/api/thesaurus/:word', async (req, res) => {
+  const w = String(req.params.word||'').toLowerCase();
+  const k = (process.env.MERRIAM_WEBSTER_THESAURUS_API_KEY||'').trim();
+  if (!/^[a-z][a-z' -]{1,30}$/.test(w) || !k) return res.json([]);
+  try { res.json(await cachedJSON(`pable:mw:thes:${w}`, 180*86400, `https://www.dictionaryapi.com/api/v3/references/thesaurus/json/${encodeURIComponent(w)}?key=${k}`)); }
+  catch (e) { sources.note('merriam-webster thesaurus', e.message); res.json([]); }
+});
+app.get('/api/fred/cpi', async (req, res) => {
+  const k = (process.env.FRED_API_KEY||'').trim();
+  if (!k) return res.json({ observations: [] });
+  try {
+    const d = await cachedJSON('pable:fred:cpi:annual', 7*86400,
+      `https://api.stlouisfed.org/fred/series/observations?series_id=CPIAUCSL&api_key=${k}&file_type=json&frequency=a`);
+    res.json({ observations: d.observations || [] });
+  } catch (e) { sources.note('fred', e.message); res.json({ observations: [] }); }
 });
 
 // Health check
@@ -864,8 +922,11 @@ app.get('/api/health', async (req, res) => {
       mw_thes:!!process.env.MERRIAM_WEBSTER_THESAURUS_API_KEY,
       google_books:!!process.env.GOOGLE_BOOKS_API_KEY, youtube:!!process.env.YOUTUBE_API_KEY,
       numista:!!process.env.NUMISTA_API_KEY, guardian:!!process.env.GUARDIAN_API_KEY,
-      newsdata:!!process.env.NEWSDATA_API_KEY }});
+      newsdata:!!process.env.NEWSDATA_API_KEY, admin:!!process.env.PABLE_ADMIN_KEY }});
 });
+
+// Any other /api path the page asks for: answer with an empty JSON reply, not the web page
+app.all('/api/*', (req, res) => res.status(404).json({ error: 'not found' }));
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname,'public','index.html')));
 app.listen(PORT, () => console.log(`Pable v4 on port ${PORT}`));
